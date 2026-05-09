@@ -1,0 +1,8 @@
+-r requirements.txt
+accelerate>=1.7,<2.0
+bitsandbytes>=0.45,<1.0
+datasets>=3.6,<4.0
+peft>=0.15,<1.0
+trl>=0.19,<1.0
+safetensors>=0.5,<1.0
+
