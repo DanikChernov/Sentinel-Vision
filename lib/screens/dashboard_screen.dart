@@ -54,6 +54,12 @@ class DashboardScreen extends StatelessWidget {
                   caption: 'known identity registry entries',
                 ),
                 MetricTile(
+                  label: 'Face AI',
+                  value: controller.settings.faceAnalysisPersistenceEnabled ? 'On' : 'Off',
+                  caption:
+                      '${controller.persistenceSnapshot.embeddingsStored} embeddings stored',
+                ),
+                MetricTile(
                   label: 'Learning',
                   value: controller.settings.continuousLearningEnabled ? 'On' : 'Off',
                   caption:
@@ -82,9 +88,17 @@ class DashboardScreen extends StatelessWidget {
                 value: '${controller.metrics.processedFrames}',
               ),
               MetricTile(
+                label: 'Queued',
+                value: '${controller.metrics.queuedFrames}',
+              ),
+              MetricTile(
                 label: 'AI Gain',
                 value:
                     '${(controller.learningSnapshot.metrics.averageConfidenceGain * 100).toStringAsFixed(1)}%',
+              ),
+              MetricTile(
+                label: 'Recoveries',
+                value: '${controller.persistenceSnapshot.recoveredIdentities}',
               ),
             ],
           ),

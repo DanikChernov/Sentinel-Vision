@@ -100,6 +100,21 @@ class TrackedEntityCard extends StatelessWidget {
                   label: 'Identity AI',
                   value: '${(entity.identityConfidence! * 100).toStringAsFixed(0)}%',
                 ),
+              if (entity.faceConfidence != null)
+                _FactPill(
+                  label: 'Face',
+                  value: '${(entity.faceConfidence! * 100).toStringAsFixed(0)}%',
+                ),
+              if (entity.embeddingSimilarity != null)
+                _FactPill(
+                  label: 'Embed',
+                  value: '${(entity.embeddingSimilarity! * 100).toStringAsFixed(0)}%',
+                ),
+              if (entity.temporalConfidence != null)
+                _FactPill(
+                  label: 'Temporal',
+                  value: '${(entity.temporalConfidence! * 100).toStringAsFixed(0)}%',
+                ),
               if (entity.recoveredInFrame)
                 const _FactPill(label: 'Identity', value: 'Recovered'),
             ],

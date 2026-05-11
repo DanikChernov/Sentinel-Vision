@@ -100,6 +100,22 @@ class SettingsScreen extends StatelessWidget {
                     settings.copyWith(labelCorrectionLearningEnabled: value),
                   ),
                 ),
+                SwitchListTile(
+                  value: settings.faceAnalysisPersistenceEnabled,
+                  title: const Text('Face analysis persistence'),
+                  subtitle: const Text('Use local face detection plus descriptor embeddings for person re-identification.'),
+                  onChanged: (value) => controller.updateSettings(
+                    settings.copyWith(faceAnalysisPersistenceEnabled: value),
+                  ),
+                ),
+                SwitchListTile(
+                  value: settings.temporalPersistenceEnabled,
+                  title: const Text('Temporal persistence'),
+                  subtitle: const Text('Blend embedding similarity with motion, box consistency, and time gap.'),
+                  onChanged: (value) => controller.updateSettings(
+                    settings.copyWith(temporalPersistenceEnabled: value),
+                  ),
+                ),
               ],
             ),
           ),
@@ -161,6 +177,140 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _SettingsCard(
+            title: 'Embedding Similarity Threshold',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  settings.embeddingSimilarityThreshold.toStringAsFixed(2),
+                  style: theme.textTheme.titleLarge,
+                ),
+                Slider(
+                  value: settings.embeddingSimilarityThreshold,
+                  min: 0.55,
+                  max: 0.95,
+                  divisions: 8,
+                  label: settings.embeddingSimilarityThreshold.toStringAsFixed(2),
+                  onChanged: (value) => controller.updateSettings(
+                    settings.copyWith(embeddingSimilarityThreshold: value),
+                  ),
+                ),
+                Text(
+                  'Higher values demand stronger face-descriptor similarity before the app reuses a stored identity.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsCard(
+            title: 'Live Performance',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<CameraCaptureProfile>(
+                  key: ValueKey<CameraCaptureProfile>(
+                    settings.cameraCaptureProfile,
+                  ),
+                  initialValue: settings.cameraCaptureProfile,
+                  decoration: const InputDecoration(
+                    labelText: 'Camera Feed Profile',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: CameraCaptureProfile.values.map((profile) {
+                    return DropdownMenuItem<CameraCaptureProfile>(
+                      value: profile,
+                      child: Text(profile.label),
+                    );
+                  }).toList(growable: false),
+                  onChanged: (profile) {
+                    if (profile == null) {
+                      return;
+                    }
+                    controller.updateSettings(
+                      settings.copyWith(cameraCaptureProfile: profile),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<InferenceAcceleration>(
+                  key: ValueKey<InferenceAcceleration>(settings.acceleration),
+                  initialValue: settings.acceleration,
+                  decoration: const InputDecoration(
+                    labelText: 'LiteRT Acceleration',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: InferenceAcceleration.values.map((acceleration) {
+                    return DropdownMenuItem<InferenceAcceleration>(
+                      value: acceleration,
+                      child: Text(acceleration.label),
+                    );
+                  }).toList(growable: false),
+                  onChanged: (acceleration) {
+                    if (acceleration == null) {
+                      return;
+                    }
+                    controller.updateSettings(
+                      settings.copyWith(acceleration: acceleration),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey<int>(settings.tfliteThreadCount),
+                  initialValue: settings.tfliteThreadCount,
+                  decoration: const InputDecoration(
+                    labelText: 'LiteRT Thread Count',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const <int>[1, 2, 3, 4, 6, 8].map((threadCount) {
+                    return DropdownMenuItem<int>(
+                      value: threadCount,
+                      child: Text('$threadCount threads'),
+                    );
+                  }).toList(growable: false),
+                  onChanged: (threadCount) {
+                    if (threadCount == null) {
+                      return;
+                    }
+                    controller.updateSettings(
+                      settings.copyWith(tfliteThreadCount: threadCount),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey<int>(settings.modelInputSize),
+                  initialValue: settings.modelInputSize,
+                  decoration: const InputDecoration(
+                    labelText: 'Model Input Size',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const <int>[320, 416, 640].map((inputSize) {
+                    return DropdownMenuItem<int>(
+                      value: inputSize,
+                      child: Text('$inputSize x $inputSize'),
+                    );
+                  }).toList(growable: false),
+                  onChanged: (inputSize) {
+                    if (inputSize == null) {
+                      return;
+                    }
+                    controller.updateSettings(
+                      settings.copyWith(modelInputSize: inputSize),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Lower capture resolution plus a 320 input usually gives the lowest live latency. Larger inputs help small-object recall if the current model supports dynamic resizing.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsCard(
             title: 'Model Backend',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,6 +359,11 @@ class SettingsScreen extends StatelessWidget {
                   onPressed: controller.clearLearnedMemory,
                   icon: const Icon(Icons.delete_forever_outlined),
                   label: const Text('Clear Learned Memory'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: controller.clearEmbeddingMemory,
+                  icon: const Icon(Icons.face_retouching_off_outlined),
+                  label: const Text('Clear Embedding Memory'),
                 ),
               ],
             ),

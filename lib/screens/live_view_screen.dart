@@ -107,6 +107,11 @@ class LiveViewScreen extends StatelessWidget {
                       icon: const Icon(Icons.video_file_rounded),
                       label: const Text('Load Video'),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: controller.runDetectorSelfTest,
+                      icon: const Icon(Icons.science_outlined),
+                      label: const Text('Run Test Inference'),
+                    ),
                   ],
                 ),
                 if (controller.errorMessage != null) ...[
@@ -150,12 +155,20 @@ class LiveViewScreen extends StatelessWidget {
                       caption: controller.sourceState.label,
                     ),
                     MetricTile(
+                      label: 'Queued',
+                      value: '${controller.metrics.queuedFrames}',
+                      caption:
+                          '${controller.metrics.droppedFrames} skipped / ${controller.metrics.adaptiveFrameIntervalMs.toStringAsFixed(0)} ms pacing',
+                    ),
+                    MetricTile(
                       label: 'Samples',
                       value: '${controller.learningSnapshot.metrics.trainingSampleCount}',
                       caption: 'local training crops',
                     ),
                   ],
                 ),
+                const SizedBox(height: 18),
+                _InferenceDebugPanel(controller: controller),
                 const SizedBox(height: 18),
                 Text('Tap A Detection To Teach It', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 12),
@@ -280,6 +293,141 @@ class LiveViewScreen extends StatelessWidget {
       VisionSourceType.videoFile => Icons.video_file_rounded,
       VisionSourceType.futureStream => Icons.cast_connected_rounded,
     };
+  }
+}
+
+class _InferenceDebugPanel extends StatelessWidget {
+  const _InferenceDebugPanel({
+    required this.controller,
+  });
+
+  final VisionPipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final diagnostics = controller.inferenceDiagnostics;
+    final testResult = controller.lastDetectorTestResult;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Inference Debug', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _DebugChip(label: 'Backend', value: diagnostics.backendName),
+              _DebugChip(
+                label: 'Loaded',
+                value: diagnostics.modelLoaded ? 'Yes' : 'No',
+              ),
+              _DebugChip(
+                label: 'Frames',
+                value: '${diagnostics.framesReceived}/${diagnostics.framesInferred}',
+              ),
+              _DebugChip(
+                label: 'Input',
+                value: diagnostics.inputShape.isEmpty
+                    ? '-'
+                    : diagnostics.inputShape.join('x'),
+              ),
+              _DebugChip(
+                label: 'Outputs',
+                value: diagnostics.outputShapes.isEmpty
+                    ? '-'
+                    : diagnostics.outputShapes
+                          .map((shape) => shape.join('x'))
+                          .join(' | '),
+              ),
+              _DebugChip(label: 'Parser', value: diagnostics.parserMode),
+              _DebugChip(label: 'Raw', value: '${diagnostics.rawCandidateCount}'),
+              _DebugChip(
+                label: 'Filtered',
+                value: '${diagnostics.filteredCandidateCount}',
+              ),
+              _DebugChip(
+                label: 'Tracker',
+                value:
+                    '${diagnostics.trackerInputCount} -> ${diagnostics.trackerOutputCount}',
+              ),
+              _DebugChip(label: 'Queue', value: '${diagnostics.queueDepth}'),
+              _DebugChip(
+                label: 'Skipped',
+                value: '${diagnostics.skippedFrames}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            diagnostics.preprocessSummary,
+            style: theme.textTheme.bodySmall,
+          ),
+          if (diagnostics.sampleOutputValues.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Sample output: ${diagnostics.sampleOutputValues.map((value) => value.toStringAsFixed(3)).join(', ')}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if (diagnostics.lastInferenceError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Last error: ${diagnostics.lastInferenceError}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          if (testResult != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              testResult.success
+                  ? 'Self-test: ${testResult.message}'
+                  : 'Self-test failed: ${testResult.message}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DebugChip extends StatelessWidget {
+  const _DebugChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.white70,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
   }
 }
 

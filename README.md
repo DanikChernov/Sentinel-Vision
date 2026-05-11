@@ -1,6 +1,6 @@
 #  Sentinel Vision Mobile
 
-Sentinel Vision Mobile is a local-first Flutter/Dart mobile vision console for on-device object detection, tracking, identity persistence, semantic crop labeling, and adaptive learning. The app is structured so detector, tracker, identity memory, semantic labeling, and learning can evolve independently without hard-coding the app around one model family.
+Sentinel Vision Mobile is a local-first Flutter/Dart mobile vision console for on-device object detection, tracking, identity persistence, semantic crop labeling, face-analysis-assisted recovery, and adaptive learning. The app is structured so detector, tracker, persistence, identity memory, semantic labeling, and learning can evolve independently without hard-coding the app around one model family.
 
 Current runtime stack:
 
@@ -8,7 +8,7 @@ Current runtime stack:
 - local video-file inference through extracted video frames
 - on-device object detection with direct LiteRT/TFLite EfficientDet inference
 - separate semantic crop labeling with Google ML Kit image labeling
-- heuristic tracking and identity recovery
+- heuristic tracking plus face-analysis persistence
 - Sentinel Learning Core for local memory, corrections, pattern history, and dataset export
 
 ## What Works
@@ -17,19 +17,24 @@ Current runtime stack:
 - stable labels such as `person-001`
 - confidence display, FPS, latency, and event logging
 - local identity persistence and recovery after brief misses
+- face-analysis-assisted identity recovery with local descriptor embeddings
 - user correction storage and false-positive feedback
 - adaptive label refinement from local usage
 - optional crop capture plus training-dataset export
+- live inference diagnostics panel plus detector self-test
 - Android-first runtime path, with iOS preparation kept current where practical
 
 ## Architecture
 
 ```text
 camera frame / video frame
--> detector
+-> frame queue
+-> preprocessing worker
+-> LiteRT/TFLite detector
 -> tracker
 -> identity registry
 -> semantic labeler
+-> face persistence processor
 -> Sentinel Learning Core
 -> refined output
 -> user feedback
@@ -67,6 +72,13 @@ lib/
       learning_core.dart
       training_sample_exporter.dart
       usage_memory_store.dart
+    persistence/
+      persistence_processor.dart
+      face_embedding_adapter.dart
+      temporal_consistency_engine.dart
+      identity_matcher.dart
+      embedding_memory_store.dart
+      face_alignment_processor.dart
     pipeline/
     tracking/
   widgets/
@@ -81,6 +93,9 @@ lib/
 - COCO-style object classes, including `person`
 - camera-stream inference from raw image planes
 - encoded-frame inference for local video files
+- isolate-backed preprocessing and inference queueing
+- parser support for EfficientDet split outputs, SSD-style outputs, `[1,84,8400]` / `[1,8400,84]`, and row-based `[N,6]` / `[N,7]` detectors
+- visible diagnostics for model load state, tensor shapes, candidate counts, sample values, and last inference error
 - clear TODO path for future ONNX or API backends
 
 ### Semantic Labeler
@@ -91,11 +106,20 @@ lib/
 - a small cache keeps repeated labels practical on-device
 - detector class labels and semantic labels stay decoupled
 
-### Tracking and Identity
+### Tracking, Identity, and Persistence
 
 - `HeuristicTracker` keeps frame-to-frame tracks alive across short gaps
 - `HeuristicIdentityRegistry` assigns persistent labels such as `person-001`
+- `PersistenceProcessor` adds face detection, face alignment, local descriptor embeddings, temporal scoring, and local embedding memory for stronger person re-identification
 - `SentinelLearningCore` reinforces repeated identities over time using local history
+
+Face-analysis persistence is recognition-only:
+
+- no face swapping
+- no face generation
+- no cloud lookup
+- no real-world identity search
+- user-assigned labels remain local
 
 ## Sentinel Learning Core
 
@@ -116,6 +140,22 @@ Stored data includes:
 - training samples
 
 This creates a continual-learning-ready path for later TFLite personalization, ONNX model swaps, vector embedding identity memory, or exported QLoRA-style workflows without pretending the MVP retrains the detector on-device today.
+
+## Inference Diagnostics
+
+The live view exposes a debug panel for detector health:
+
+- backend name
+- model loaded state
+- frames received and inferred
+- input and output tensor shapes
+- parser mode
+- raw and filtered candidate counts
+- tracker input and output counts
+- queue depth and skipped frames
+- sample output values
+- last inference error
+- detector self-test results
 
 ## Source Modes
 
@@ -139,9 +179,10 @@ Those entries are architecture hooks only. If selected, the controller rejects t
 ## Local Storage and Privacy
 
 - learning memory stays on-device through `sqflite`
+- face-embedding memory stays on-device through `sqflite`
 - crop samples and exported datasets are written to local app support storage
 - no cloud dependency is required
-- the app includes controls to clear learned memory and export collected training data
+- the app includes controls to clear learned memory, clear embedding memory, and export collected training data
 
 ## Future Integration Path
 
@@ -150,6 +191,8 @@ The app is ready for:
 - custom LiteRT/TFLite detector swaps
 - ONNX runtime detector integration
 - vector embedding re-identification
+- TFLite personalization-ready face embedding swaps such as ArcFace, MobileFaceNet, or FaceNet
+- ONNX face embedding adapters such as InsightFace or DeepFace-style recognition backends
 - exported training data for later offline fine-tuning
 - subtle Epyk-3-style modular perception experiments
 - subtle Myne-2-style spatial and local-AI processing experiments
@@ -179,6 +222,8 @@ The current unit tests cover:
 - detector contract timestamp behavior
 - tracker identity continuity
 - identity recovery after track replacement
+- face-embedding match selection
+- temporal persistence scoring
 - corrected-label reuse in Sentinel Learning Core
 - learned person alias reinforcement
 - dataset export beyond the recent-sample dashboard cache

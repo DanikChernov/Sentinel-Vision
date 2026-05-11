@@ -15,4 +15,12 @@ class VisionScope extends InheritedNotifier<VisionPipelineController> {
     assert(scope != null, 'VisionScope is missing from the widget tree.');
     return scope!.notifier!;
   }
+
+  static VisionPipelineController read(BuildContext context) {
+    final element =
+        context.getElementForInheritedWidgetOfExactType<VisionScope>();
+    final scope = element?.widget as VisionScope?;
+    assert(scope != null, 'VisionScope is missing from the widget tree.');
+    return scope!.notifier!;
+  }
 }

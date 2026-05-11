@@ -360,9 +360,9 @@ class SentinelLearningCore {
     int trainingSampleDelta = 0,
     bool refreshStorageBytes = false,
   }) {
-    final identities = _identityPatternMemory.identities.toList(growable: false)
+    final identities = _identityPatternMemory.identities.toList(growable: true)
       ..sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
-    final mappings = _adaptiveLabelRefiner.mappings.toList(growable: false)
+    final mappings = _adaptiveLabelRefiner.mappings.toList(growable: true)
       ..sort((a, b) => b.usageCount.compareTo(a.usageCount));
 
     _snapshot = _snapshot.copyWith(

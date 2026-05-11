@@ -8,6 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
+import '../../models/app_settings.dart';
 import '../../models/frame_context.dart';
 import '../../models/video_source.dart';
 
@@ -26,6 +27,7 @@ class MediaSourceService {
   int _frameCounter = 0;
   bool _sourceBusy = false;
   Size? _currentFrameSourceSize;
+  CameraCaptureProfile _cameraCaptureProfile = CameraCaptureProfile.low;
 
   VideoSourceState get sourceState => _sourceState;
   CameraController? get cameraController => _cameraController;
@@ -58,6 +60,33 @@ class MediaSourceService {
 
   Future<void> initialize() async {
     await _initializeCameraIfNeeded();
+  }
+
+  Future<void> updateCameraCaptureProfile(
+    CameraCaptureProfile profile,
+  ) async {
+    if (_cameraCaptureProfile == profile) {
+      return;
+    }
+    _cameraCaptureProfile = profile;
+    final wasStreaming = _cameraController?.value.isStreamingImages == true;
+    if (_cameraController == null && !_sourceState.isCamera) {
+      return;
+    }
+
+    await stop();
+    await _cameraController?.dispose();
+    _cameraController = null;
+    _currentFrameSourceSize = null;
+    await _initializeCameraIfNeeded();
+
+    if (wasStreaming && _sourceState.isCamera) {
+      _sourceState = const VideoSourceState(
+        type: VisionSourceType.camera,
+        label: 'Rear camera',
+        isReady: true,
+      );
+    }
   }
 
   Future<void> switchSource(VisionSourceType type) async {
@@ -173,7 +202,7 @@ class MediaSourceService {
 
     final controller = CameraController(
       preferredCamera,
-      ResolutionPreset.medium,
+      _resolutionPresetFor(_cameraCaptureProfile),
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -205,19 +234,23 @@ class MediaSourceService {
       }
 
       _sourceBusy = true;
+      final acquisitionWatch = Stopwatch()..start();
       final rotation = _cameraFrameRotation(readyController, image);
       final frameSize = _orientedSize(
         Size(image.width.toDouble(), image.height.toDouble()),
         rotation,
       );
       _currentFrameSourceSize = frameSize;
+      final snapshot = _snapshotFromCameraImage(image);
+      acquisitionWatch.stop();
       final frame = FrameContext(
         frameNumber: ++_frameCounter,
         sourceSize: frameSize,
         timestamp: DateTime.now(),
         sourceType: VisionSourceType.camera,
         rotation: rotation,
-        snapshot: _snapshotFromCameraImage(image),
+        snapshot: snapshot,
+        sourceAcquisitionDuration: acquisitionWatch.elapsed,
       );
 
       Future<void>.sync(() => onFrame(frame)).whenComplete(() {
@@ -236,7 +269,7 @@ class MediaSourceService {
     }
 
     await controller.play();
-    _videoTick = Timer.periodic(const Duration(milliseconds: 240), (_) {
+    _videoTick = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (_sourceBusy) {
         return;
       }
@@ -262,6 +295,7 @@ class MediaSourceService {
     required VideoPlayerController controller,
     required String videoPath,
   }) async {
+    final acquisitionWatch = Stopwatch()..start();
     final position = controller.value.position;
     final bytes = await vt.VideoThumbnail.thumbnailData(
       video: videoPath,
@@ -278,6 +312,7 @@ class MediaSourceService {
     if (decoded == null) {
       return null;
     }
+    acquisitionWatch.stop();
 
     return FrameContext(
       frameNumber: ++_frameCounter,
@@ -287,6 +322,7 @@ class MediaSourceService {
       sourcePosition: position,
       encodedImageBytes: bytes,
       sourcePath: videoPath,
+      sourceAcquisitionDuration: acquisitionWatch.elapsed,
     );
   }
 
@@ -361,5 +397,13 @@ class MediaSourceService {
       return sourceSize;
     }
     return Size(sourceSize.height, sourceSize.width);
+  }
+
+  ResolutionPreset _resolutionPresetFor(CameraCaptureProfile profile) {
+    return switch (profile) {
+      CameraCaptureProfile.low => ResolutionPreset.low,
+      CameraCaptureProfile.medium => ResolutionPreset.medium,
+      CameraCaptureProfile.high => ResolutionPreset.high,
+    };
   }
 }

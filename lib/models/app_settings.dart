@@ -8,6 +8,27 @@ enum ModelBackend {
   final String label;
 }
 
+enum InferenceAcceleration {
+  auto('Auto'),
+  cpu('CPU'),
+  xnnpack('XNNPACK'),
+  gpu('GPU');
+
+  const InferenceAcceleration(this.label);
+
+  final String label;
+}
+
+enum CameraCaptureProfile {
+  low('Low 360p/480p'),
+  medium('Medium 480p/640p'),
+  high('High 640p/720p');
+
+  const CameraCaptureProfile(this.label);
+
+  final String label;
+}
+
 class AppSettings {
   const AppSettings({
     this.detectionEnabled = true,
@@ -24,6 +45,10 @@ class AppSettings {
     this.identityPersistence = const Duration(seconds: 4),
     this.embeddingSimilarityThreshold = 0.78,
     this.backend = ModelBackend.tflite,
+    this.acceleration = InferenceAcceleration.auto,
+    this.cameraCaptureProfile = CameraCaptureProfile.low,
+    this.modelInputSize = 320,
+    this.tfliteThreadCount = 2,
   });
 
   final bool detectionEnabled;
@@ -40,6 +65,10 @@ class AppSettings {
   final Duration identityPersistence;
   final double embeddingSimilarityThreshold;
   final ModelBackend backend;
+  final InferenceAcceleration acceleration;
+  final CameraCaptureProfile cameraCaptureProfile;
+  final int modelInputSize;
+  final int tfliteThreadCount;
 
   AppSettings copyWith({
     bool? detectionEnabled,
@@ -56,6 +85,10 @@ class AppSettings {
     Duration? identityPersistence,
     double? embeddingSimilarityThreshold,
     ModelBackend? backend,
+    InferenceAcceleration? acceleration,
+    CameraCaptureProfile? cameraCaptureProfile,
+    int? modelInputSize,
+    int? tfliteThreadCount,
   }) {
     return AppSettings(
       detectionEnabled: detectionEnabled ?? this.detectionEnabled,
@@ -81,6 +114,11 @@ class AppSettings {
       embeddingSimilarityThreshold:
           embeddingSimilarityThreshold ?? this.embeddingSimilarityThreshold,
       backend: backend ?? this.backend,
+      acceleration: acceleration ?? this.acceleration,
+      cameraCaptureProfile:
+          cameraCaptureProfile ?? this.cameraCaptureProfile,
+      modelInputSize: modelInputSize ?? this.modelInputSize,
+      tfliteThreadCount: tfliteThreadCount ?? this.tfliteThreadCount,
     );
   }
 }

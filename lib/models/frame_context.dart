@@ -63,6 +63,7 @@ class FrameContext {
     this.snapshot,
     this.encodedImageBytes,
     this.sourcePath,
+    this.sourceAcquisitionDuration = Duration.zero,
   });
 
   final int frameNumber;
@@ -74,4 +75,5 @@ class FrameContext {
   final FrameSnapshot? snapshot;
   final Uint8List? encodedImageBytes;
   final String? sourcePath;
+  final Duration sourceAcquisitionDuration;
 }

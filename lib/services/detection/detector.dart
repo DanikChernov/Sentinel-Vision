@@ -1,3 +1,4 @@
+import '../../models/app_settings.dart';
 import '../../models/detection_result.dart';
 import '../../models/frame_context.dart';
 import '../../models/inference_diagnostics.dart';
@@ -11,6 +12,8 @@ abstract class Detector {
   Future<void> initialize() async {}
 
   Future<void> dispose() async {}
+
+  Future<void> applySettings(AppSettings settings) async {}
 
   Future<List<DetectionResult>> detect(FrameContext frame);
 

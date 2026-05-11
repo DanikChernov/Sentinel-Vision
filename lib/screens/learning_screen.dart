@@ -60,6 +60,35 @@ class LearningScreen extends StatelessWidget {
                 value: '${learning.metrics.falsePositiveCount}',
                 caption: 'rejected detections remembered',
               ),
+              MetricTile(
+                label: 'Embeddings',
+                value: '${controller.persistenceSnapshot.embeddingsStored}',
+                caption: controller.persistenceSnapshot.backend.label,
+              ),
+              MetricTile(
+                label: 'Recoveries',
+                value: '${controller.persistenceSnapshot.recoveredIdentities}',
+                caption:
+                    '${(controller.persistenceSnapshot.identityRecoveryRate * 100).toStringAsFixed(1)}% recovery rate',
+              ),
+              MetricTile(
+                label: 'Similarity',
+                value:
+                    '${(controller.persistenceSnapshot.averageSimilarity * 100).toStringAsFixed(1)}%',
+                caption: 'average embedding similarity',
+              ),
+              MetricTile(
+                label: 'Temporal',
+                value:
+                    '${(controller.persistenceSnapshot.averageTemporalConfidence * 100).toStringAsFixed(1)}%',
+                caption: 'average temporal confidence',
+              ),
+              MetricTile(
+                label: 'Face',
+                value:
+                    '${(controller.persistenceSnapshot.averageFaceConfidence * 100).toStringAsFixed(1)}%',
+                caption: 'average face confidence',
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -77,8 +106,73 @@ class LearningScreen extends StatelessWidget {
                 icon: const Icon(Icons.delete_forever_outlined),
                 label: const Text('Clear Memory'),
               ),
+              OutlinedButton.icon(
+                onPressed: controller.clearEmbeddingMemory,
+                icon: const Icon(Icons.face_retouching_off_outlined),
+                label: const Text('Clear Embeddings'),
+              ),
             ],
           ),
+          const SizedBox(height: 18),
+          Text('Face Persistence Memory', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 12),
+          if (controller.persistenceSnapshot.identities.isEmpty)
+            const _EmptyLearningCard(
+              message: 'No face-descriptor identities stored yet. Repeated visible people will accumulate local embedding memory here.',
+            )
+          else
+            Column(
+              children: controller.persistenceSnapshot.identities.map((identity) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: theme.colorScheme.outline),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          identity.preferredAlias == null
+                              ? identity.stableLabel
+                              : '${identity.stableLabel} / ${identity.preferredAlias}',
+                          style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _StatChip(label: 'Embeds', value: '${identity.embeddingCount}'),
+                            _StatChip(label: 'Sightings', value: '${identity.sightings}'),
+                            _StatChip(label: 'Recoveries', value: '${identity.recoveries}'),
+                            _StatChip(
+                              label: 'Similarity',
+                              value:
+                                  '${(identity.averageSimilarity * 100).toStringAsFixed(0)}%',
+                            ),
+                            _StatChip(
+                              label: 'Temporal',
+                              value:
+                                  '${(identity.averageTemporalConfidence * 100).toStringAsFixed(0)}%',
+                            ),
+                            _StatChip(
+                              label: 'Face',
+                              value:
+                                  '${(identity.averageFaceConfidence * 100).toStringAsFixed(0)}%',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(growable: false),
+            ),
           const SizedBox(height: 18),
           Text('Learned Identities', style: theme.textTheme.titleLarge),
           const SizedBox(height: 12),
