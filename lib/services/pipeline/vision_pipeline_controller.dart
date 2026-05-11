@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../models/app_settings.dart';
@@ -72,6 +73,7 @@ class VisionPipelineController extends ChangeNotifier {
           isReady: false,
         ),
       );
+  final ValueNotifier<Size?> _sourceSizeNotifier = ValueNotifier<Size?>(null);
   final ValueNotifier<bool> _processingNotifier =
       ValueNotifier<bool>(false);
 
@@ -125,6 +127,7 @@ class VisionPipelineController extends ChangeNotifier {
       _stageTimingNotifier;
   ValueListenable<VideoSourceState> get sourceStateListenable =>
       _sourceStateNotifier;
+  ValueListenable<Size?> get sourceSizeListenable => _sourceSizeNotifier;
   ValueListenable<bool> get processingListenable => _processingNotifier;
   bool get isInitializing => _isInitializing;
   bool get isProcessing => _isProcessing;
@@ -426,6 +429,7 @@ class VisionPipelineController extends ChangeNotifier {
     _diagnosticsNotifier.dispose();
     _stageTimingNotifier.dispose();
     _sourceStateNotifier.dispose();
+    _sourceSizeNotifier.dispose();
     _processingNotifier.dispose();
     super.dispose();
   }
@@ -837,10 +841,21 @@ class VisionPipelineController extends ChangeNotifier {
   }
 
   void recordOverlayRepaint(Duration duration) {
-    _stageTimingBreakdown = _stageTimingBreakdown.copyWith(
+    final nextBreakdown = _stageTimingBreakdown.copyWith(
       overlayRepaintCount: _stageTimingBreakdown.overlayRepaintCount + 1,
       overlayRepaintMs: duration.inMicroseconds / 1000,
     );
+    if (SchedulerBinding.instance.schedulerPhase ==
+            SchedulerPhase.persistentCallbacks ||
+        SchedulerBinding.instance.schedulerPhase ==
+            SchedulerPhase.postFrameCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _stageTimingBreakdown = nextBreakdown;
+        _publishStageTimings();
+      });
+      return;
+    }
+    _stageTimingBreakdown = nextBreakdown;
     _publishStageTimings();
   }
 
@@ -863,6 +878,7 @@ class VisionPipelineController extends ChangeNotifier {
 
   void _publishSourceState() {
     _sourceStateNotifier.value = _sourceState;
+    _sourceSizeNotifier.value = sourceSize;
   }
 
   void _appendEvent(PipelineEvent event) {

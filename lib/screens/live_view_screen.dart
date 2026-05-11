@@ -2,6 +2,9 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/inference_diagnostics.dart';
+import '../models/pipeline_metrics.dart';
+import '../models/stage_timing_breakdown.dart';
 import '../models/tracked_entity.dart';
 import '../models/video_source.dart';
 import '../services/pipeline/vision_pipeline_controller.dart';
@@ -11,12 +14,22 @@ import '../widgets/metric_tile.dart';
 import '../widgets/status_chip.dart';
 import '../widgets/tracked_entity_card.dart';
 
-class LiveViewScreen extends StatelessWidget {
+class LiveViewScreen extends StatefulWidget {
   const LiveViewScreen({super.key});
 
   @override
+  State<LiveViewScreen> createState() => _LiveViewScreenState();
+}
+
+class _LiveViewScreenState extends State<LiveViewScreen> {
+  @override
   Widget build(BuildContext context) {
-    final controller = VisionScope.of(context);
+    final controller = VisionScope.read(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        controller.recordLiveViewBuild();
+      }
+    });
     final theme = Theme.of(context);
 
     return LayoutBuilder(
@@ -41,160 +54,114 @@ class LiveViewScreen extends StatelessWidget {
                   child: _PreviewCard(controller: controller),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    StatusChip(
-                      label: 'Pipeline',
-                      value: controller.pipelineStatus,
-                      color: controller.isProcessing
-                          ? const Color(0xFF67E39C)
-                          : const Color(0xFFFFC857),
-                      icon: controller.isProcessing
-                          ? Icons.play_arrow_rounded
-                          : Icons.pause_rounded,
-                    ),
-                    StatusChip(
-                      label: 'Source',
-                      value: controller.sourceState.type.label,
-                      color: const Color(0xFF85C6FF),
-                      icon: Icons.stream_rounded,
-                    ),
-                    StatusChip(
-                      label: 'Backend',
-                      value: controller.settings.backend.label,
-                      color: const Color(0xFFFF9A3D),
-                      icon: Icons.memory_rounded,
-                    ),
-                    StatusChip(
-                      label: 'Learning',
-                      value: controller.settings.continuousLearningEnabled ? 'On' : 'Off',
-                      color: const Color(0xFF85C6FF),
-                      icon: Icons.psychology_rounded,
-                    ),
-                    StatusChip(
-                      label: 'Tracks',
-                      value: '${controller.trackedEntities.length}',
-                      color: const Color(0xFF3ED4D3),
-                      icon: Icons.track_changes_rounded,
-                    ),
-                  ],
+                _StatusStrip(controller: controller),
+                const SizedBox(height: 16),
+                _ControlBar(
+                  controller: controller,
+                  onSelectSource: () => _showSourceSelector(context, controller),
+                ),
+                AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    final errorMessage = controller.errorMessage;
+                    if (errorMessage == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.error.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.error.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          errorMessage,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: controller.sourceState.isReady
-                          ? controller.toggleProcessing
-                          : null,
-                      icon: Icon(
-                        controller.isProcessing ? Icons.stop_circle : Icons.play_circle_fill,
-                      ),
-                      label: Text(
-                        controller.isProcessing ? 'Stop Processing' : 'Start Processing',
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _showSourceSelector(context),
-                      icon: const Icon(Icons.swap_horiz_rounded),
-                      label: const Text('Source'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: controller.pickVideoFile,
-                      icon: const Icon(Icons.video_file_rounded),
-                      label: const Text('Load Video'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: controller.runDetectorSelfTest,
-                      icon: const Icon(Icons.science_outlined),
-                      label: const Text('Run Test Inference'),
-                    ),
-                  ],
+                ValueListenableBuilder<PipelineMetrics>(
+                  valueListenable: controller.metricsListenable,
+                  builder: (context, metrics, _) {
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        MetricTile(
+                          label: 'FPS',
+                          value: metrics.fps.toStringAsFixed(1),
+                          caption: 'preview stays independent from inference',
+                        ),
+                        MetricTile(
+                          label: 'Latency',
+                          value: '${metrics.frameLatencyMs.toStringAsFixed(1)} ms',
+                          caption: 'full pipeline latency',
+                        ),
+                        MetricTile(
+                          label: 'Frames',
+                          value: '${metrics.processedFrames}',
+                          caption: controller.sourceState.label,
+                        ),
+                        MetricTile(
+                          label: 'Queue',
+                          value: '${metrics.queuedFrames}',
+                          caption:
+                              '${metrics.droppedFrames} dropped / ${metrics.adaptiveFrameIntervalMs.toStringAsFixed(0)} ms pacing',
+                        ),
+                        MetricTile(
+                          label: 'Inference',
+                          value: '${metrics.inferenceFrames}',
+                          caption: 'worker isolate frames',
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                if (controller.errorMessage != null) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.error.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: theme.colorScheme.error.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      controller.errorMessage!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    MetricTile(
-                      label: 'FPS',
-                      value: controller.metrics.fps.toStringAsFixed(1),
-                      caption: 'live pipeline throughput',
-                    ),
-                    MetricTile(
-                      label: 'Latency',
-                      value: '${controller.metrics.frameLatencyMs.toStringAsFixed(1)} ms',
-                      caption: 'frame processing time',
-                    ),
-                    MetricTile(
-                      label: 'Frames',
-                      value: '${controller.metrics.processedFrames}',
-                      caption: controller.sourceState.label,
-                    ),
-                    MetricTile(
-                      label: 'Queued',
-                      value: '${controller.metrics.queuedFrames}',
-                      caption:
-                          '${controller.metrics.droppedFrames} skipped / ${controller.metrics.adaptiveFrameIntervalMs.toStringAsFixed(0)} ms pacing',
-                    ),
-                    MetricTile(
-                      label: 'Samples',
-                      value: '${controller.learningSnapshot.metrics.trainingSampleCount}',
-                      caption: 'local training crops',
-                    ),
-                  ],
-                ),
+                const SizedBox(height: 18),
+                _PerformanceBreakdownPanel(controller: controller),
                 const SizedBox(height: 18),
                 _InferenceDebugPanel(controller: controller),
                 const SizedBox(height: 18),
                 Text('Tap A Detection To Teach It', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 12),
-                if (controller.trackedEntities.isEmpty)
-                  _LearningHint(theme: theme)
-                else
-                  Column(
-                    children: controller.trackedEntities
-                        .map(
-                          (entity) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: TrackedEntityCard(
-                              entity: entity,
-                              onRename: () => _showCorrectionDialog(
-                                context,
-                                controller,
-                                entity,
+                ValueListenableBuilder<List<TrackedEntity>>(
+                  valueListenable: controller.trackedEntitiesListenable,
+                  builder: (context, entities, _) {
+                    if (entities.isEmpty) {
+                      return _LearningHint(theme: theme);
+                    }
+                    return Column(
+                      children: entities
+                          .map(
+                            (entity) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: TrackedEntityCard(
+                                entity: entity,
+                                onRename: () => _showCorrectionDialog(
+                                  context,
+                                  controller,
+                                  entity,
+                                ),
+                                onFalsePositive: () {
+                                  controller.markEntityFalsePositive(entity);
+                                },
                               ),
-                              onFalsePositive: () {
-                                controller.markEntityFalsePositive(entity);
-                              },
                             ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
+                          )
+                          .toList(growable: false),
+                    );
+                  },
+                ),
                 const SizedBox(height: 10),
                 Text(
                   'Corrections stay on-device and feed the Sentinel Learning Core without requiring cloud sync.',
@@ -249,8 +216,10 @@ class LiveViewScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _showSourceSelector(BuildContext context) async {
-    final controller = VisionScope.of(context);
+  Future<void> _showSourceSelector(
+    BuildContext context,
+    VisionPipelineController controller,
+  ) async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF101C28),
@@ -296,6 +265,238 @@ class LiveViewScreen extends StatelessWidget {
   }
 }
 
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({
+    required this.controller,
+  });
+
+  final VisionPipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<VideoSourceState>(
+      valueListenable: controller.sourceStateListenable,
+      builder: (context, sourceState, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: controller.processingListenable,
+          builder: (context, isProcessing, _) {
+            return ValueListenableBuilder<DetectorDiagnostics>(
+              valueListenable: controller.diagnosticsListenable,
+              builder: (context, diagnostics, _) {
+                return ValueListenableBuilder<List<TrackedEntity>>(
+                  valueListenable: controller.trackedEntitiesListenable,
+                  builder: (context, entities, _) {
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        StatusChip(
+                          label: 'Pipeline',
+                          value: controller.pipelineStatus,
+                          color: isProcessing
+                              ? const Color(0xFF67E39C)
+                              : const Color(0xFFFFC857),
+                          icon: isProcessing
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded,
+                        ),
+                        StatusChip(
+                          label: 'Source',
+                          value: sourceState.type.label,
+                          color: const Color(0xFF85C6FF),
+                          icon: Icons.stream_rounded,
+                        ),
+                        StatusChip(
+                          label: 'Backend',
+                          value: controller.settings.backend.label,
+                          color: const Color(0xFFFF9A3D),
+                          icon: Icons.memory_rounded,
+                        ),
+                        StatusChip(
+                          label: 'Delegate',
+                          value: diagnostics.delegateName,
+                          color: const Color(0xFF9EE37D),
+                          icon: Icons.bolt_rounded,
+                        ),
+                        StatusChip(
+                          label: 'Tracks',
+                          value: '${entities.length}',
+                          color: const Color(0xFF3ED4D3),
+                          icon: Icons.track_changes_rounded,
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ControlBar extends StatelessWidget {
+  const _ControlBar({
+    required this.controller,
+    required this.onSelectSource,
+  });
+
+  final VisionPipelineController controller;
+  final VoidCallback onSelectSource;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<VideoSourceState>(
+      valueListenable: controller.sourceStateListenable,
+      builder: (context, sourceState, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: controller.processingListenable,
+          builder: (context, isProcessing, _) {
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                FilledButton.icon(
+                  onPressed: sourceState.isReady ? controller.toggleProcessing : null,
+                  icon: Icon(
+                    isProcessing ? Icons.stop_circle : Icons.play_circle_fill,
+                  ),
+                  label: Text(
+                    isProcessing ? 'Stop Processing' : 'Start Processing',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onSelectSource,
+                  icon: const Icon(Icons.swap_horiz_rounded),
+                  label: const Text('Source'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: controller.pickVideoFile,
+                  icon: const Icon(Icons.video_file_rounded),
+                  label: const Text('Load Video'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: controller.runDetectorSelfTest,
+                  icon: const Icon(Icons.science_outlined),
+                  label: const Text('Run Test Inference'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _PerformanceBreakdownPanel extends StatelessWidget {
+  const _PerformanceBreakdownPanel({
+    required this.controller,
+  });
+
+  final VisionPipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<StageTimingBreakdown>(
+      valueListenable: controller.stageTimingListenable,
+      builder: (context, timings, _) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: theme.colorScheme.outline),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Performance Breakdown', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _DebugChip(
+                    label: 'Acquire',
+                    value: '${timings.sourceAcquisitionMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Convert',
+                    value: '${timings.colorConversionMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Rotate',
+                    value: '${timings.rotationMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Resize',
+                    value: '${timings.resizeMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Normalize',
+                    value: '${timings.normalizationMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Tensor Copy',
+                    value: '${timings.tensorCopyMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Inference',
+                    value: '${timings.inferenceMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Parse',
+                    value: '${timings.outputParsingMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Track',
+                    value: '${timings.trackingMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Persistence',
+                    value: '${timings.persistenceMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Learning',
+                    value: '${timings.learningMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Logging',
+                    value: '${timings.loggingMs.toStringAsFixed(1)} ms',
+                  ),
+                  _DebugChip(
+                    label: 'Overlay',
+                    value:
+                        '${timings.overlayRepaintMs.toStringAsFixed(1)} ms / ${timings.overlayRepaintCount}',
+                  ),
+                  _DebugChip(
+                    label: 'Builds',
+                    value: '${timings.liveWidgetBuildCount}',
+                  ),
+                  _DebugChip(
+                    label: 'Total',
+                    value: '${timings.totalPipelineMs.toStringAsFixed(1)} ms',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                timings.pipelinePath,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _InferenceDebugPanel extends StatelessWidget {
   const _InferenceDebugPanel({
     required this.controller,
@@ -306,99 +507,241 @@ class _InferenceDebugPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final diagnostics = controller.inferenceDiagnostics;
-    final testResult = controller.lastDetectorTestResult;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: theme.colorScheme.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Inference Debug', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+    return ValueListenableBuilder<DetectorDiagnostics>(
+      valueListenable: controller.diagnosticsListenable,
+      builder: (context, diagnostics, _) {
+        final testResult = controller.lastDetectorTestResult;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: theme.colorScheme.outline),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DebugChip(label: 'Backend', value: diagnostics.backendName),
-              _DebugChip(
-                label: 'Loaded',
-                value: diagnostics.modelLoaded ? 'Yes' : 'No',
+              Text('Inference Debug', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _DebugChip(label: 'Backend', value: diagnostics.backendName),
+                  _DebugChip(
+                    label: 'Loaded',
+                    value: diagnostics.modelLoaded ? 'Yes' : 'No',
+                  ),
+                  _DebugChip(label: 'Delegate', value: diagnostics.delegateName),
+                  _DebugChip(
+                    label: 'Threads',
+                    value: '${diagnostics.threadCount}',
+                  ),
+                  _DebugChip(
+                    label: 'Frames',
+                    value:
+                        '${diagnostics.framesReceived}/${diagnostics.framesInferred}',
+                  ),
+                  _DebugChip(
+                    label: 'Frame',
+                    value:
+                        '${diagnostics.frameWidth}x${diagnostics.frameHeight}',
+                  ),
+                  _DebugChip(
+                    label: 'Requested',
+                    value: diagnostics.requestedInputSize == 0
+                        ? '-'
+                        : '${diagnostics.requestedInputSize}',
+                  ),
+                  _DebugChip(
+                    label: 'Input',
+                    value: diagnostics.inputShape.isEmpty
+                        ? '-'
+                        : diagnostics.inputShape.join('x'),
+                  ),
+                  _DebugChip(
+                    label: 'Outputs',
+                    value: diagnostics.outputShapes.isEmpty
+                        ? '-'
+                        : diagnostics.outputShapes
+                              .map((shape) => shape.join('x'))
+                              .join(' | '),
+                  ),
+                  _DebugChip(label: 'Parser', value: diagnostics.parserMode),
+                  _DebugChip(label: 'Raw', value: '${diagnostics.rawCandidateCount}'),
+                  _DebugChip(
+                    label: 'Filtered',
+                    value: '${diagnostics.filteredCandidateCount}',
+                  ),
+                  _DebugChip(
+                    label: 'Tracker',
+                    value:
+                        '${diagnostics.trackerInputCount} -> ${diagnostics.trackerOutputCount}',
+                  ),
+                  _DebugChip(label: 'Queue', value: '${diagnostics.queueDepth}'),
+                  _DebugChip(
+                    label: 'Skipped',
+                    value: '${diagnostics.skippedFrames}',
+                  ),
+                ],
               ),
-              _DebugChip(
-                label: 'Frames',
-                value: '${diagnostics.framesReceived}/${diagnostics.framesInferred}',
+              const SizedBox(height: 12),
+              Text(
+                diagnostics.preprocessSummary,
+                style: theme.textTheme.bodySmall,
               ),
-              _DebugChip(
-                label: 'Input',
-                value: diagnostics.inputShape.isEmpty
-                    ? '-'
-                    : diagnostics.inputShape.join('x'),
-              ),
-              _DebugChip(
-                label: 'Outputs',
-                value: diagnostics.outputShapes.isEmpty
-                    ? '-'
-                    : diagnostics.outputShapes
-                          .map((shape) => shape.join('x'))
-                          .join(' | '),
-              ),
-              _DebugChip(label: 'Parser', value: diagnostics.parserMode),
-              _DebugChip(label: 'Raw', value: '${diagnostics.rawCandidateCount}'),
-              _DebugChip(
-                label: 'Filtered',
-                value: '${diagnostics.filteredCandidateCount}',
-              ),
-              _DebugChip(
-                label: 'Tracker',
-                value:
-                    '${diagnostics.trackerInputCount} -> ${diagnostics.trackerOutputCount}',
-              ),
-              _DebugChip(label: 'Queue', value: '${diagnostics.queueDepth}'),
-              _DebugChip(
-                label: 'Skipped',
-                value: '${diagnostics.skippedFrames}',
-              ),
+              if (diagnostics.sampleOutputValues.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Sample output: ${diagnostics.sampleOutputValues.map((value) => value.toStringAsFixed(3)).join(', ')}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              if (diagnostics.lastInferenceError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Last error: ${diagnostics.lastInferenceError}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ],
+              if (testResult != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  testResult.success
+                      ? 'Self-test: ${testResult.message}'
+                      : 'Self-test failed: ${testResult.message}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            diagnostics.preprocessSummary,
-            style: theme.textTheme.bodySmall,
-          ),
-          if (diagnostics.sampleOutputValues.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Sample output: ${diagnostics.sampleOutputValues.map((value) => value.toStringAsFixed(3)).join(', ')}',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          if (diagnostics.lastInferenceError != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Last error: ${diagnostics.lastInferenceError}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+        );
+      },
+    );
+  }
+}
+
+class _PreviewCard extends StatelessWidget {
+  const _PreviewCard({
+    required this.controller,
+  });
+
+  final VisionPipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<VideoSourceState>(
+      valueListenable: controller.sourceStateListenable,
+      builder: (context, sourceState, _) {
+        return ValueListenableBuilder<Size?>(
+          valueListenable: controller.sourceSizeListenable,
+          builder: (context, sourceSize, _) {
+            final cameraController = controller.cameraController;
+            final videoController = controller.videoController;
+            Widget preview = _PreviewPlaceholder(
+              title: sourceState.label,
+              subtitle: sourceState.isReady
+                  ? 'Ready for on-device processing'
+                  : 'Prepare a source to begin',
+            );
+
+            if (sourceState.type == VisionSourceType.camera &&
+                cameraController != null &&
+                cameraController.value.isInitialized) {
+              preview = CameraPreview(cameraController);
+            } else if (sourceState.type == VisionSourceType.videoFile &&
+                videoController != null &&
+                videoController.value.isInitialized) {
+              preview = VideoPlayer(videoController);
+            }
+
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF112234),
+                    Color(0xFF09131E),
+                  ],
+                ),
+                border: Border.all(color: theme.colorScheme.outline),
               ),
-            ),
-          ],
-          if (testResult != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              testResult.success
-                  ? 'Self-test: ${testResult.message}'
-                  : 'Self-test failed: ${testResult.message}',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ],
-      ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFF112234).withValues(alpha: 0.5),
+                            Colors.black,
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (sourceSize != null)
+                      FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: sourceSize.width,
+                          height: sourceSize.height,
+                          child: preview,
+                        ),
+                      )
+                    else
+                      preview,
+                    Positioned.fill(
+                      child: ValueListenableBuilder<List<TrackedEntity>>(
+                        valueListenable: controller.trackedEntitiesListenable,
+                        builder: (context, entities, _) {
+                          return BoundingBoxOverlay(
+                            entities: entities,
+                            sourceSize: sourceSize,
+                            onPainted: controller.recordOverlayRepaint,
+                          );
+                        },
+                      ),
+                    ),
+                    const Positioned(
+                      top: 16,
+                      left: 16,
+                      child: _OverlayBadge(
+                        label: 'LIVE VIEW',
+                        icon: Icons.blur_on_rounded,
+                      ),
+                    ),
+                    Positioned(
+                      right: 16,
+                      top: 16,
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: controller.processingListenable,
+                        builder: (context, isProcessing, _) {
+                          return _OverlayBadge(
+                            label: isProcessing ? 'PROCESSING' : 'IDLE',
+                            icon: isProcessing
+                                ? Icons.motion_photos_on
+                                : Icons.pause_circle,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -451,107 +794,6 @@ class _LearningHint extends StatelessWidget {
       child: Text(
         'Start processing to populate live detections. Once tracks appear here, you can rename them or flag false positives.',
         style: theme.textTheme.bodyMedium,
-      ),
-    );
-  }
-}
-
-class _PreviewCard extends StatelessWidget {
-  const _PreviewCard({
-    required this.controller,
-  });
-
-  final VisionPipelineController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cameraController = controller.cameraController;
-    final videoController = controller.videoController;
-    final sourceSize = controller.sourceSize;
-
-    Widget preview = _PreviewPlaceholder(
-      title: controller.sourceState.label,
-      subtitle: controller.sourceState.isReady
-          ? 'Ready for on-device processing'
-          : 'Prepare a source to begin',
-    );
-
-    if (controller.sourceState.type == VisionSourceType.camera &&
-        cameraController != null &&
-        cameraController.value.isInitialized) {
-      preview = CameraPreview(cameraController);
-    } else if (controller.sourceState.type == VisionSourceType.videoFile &&
-        videoController != null &&
-        videoController.value.isInitialized) {
-      preview = VideoPlayer(videoController);
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF112234),
-            Color(0xFF09131E),
-          ],
-        ),
-        border: Border.all(color: theme.colorScheme.outline),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF112234).withValues(alpha: 0.5),
-                    Colors.black,
-                  ],
-                ),
-              ),
-            ),
-            if (sourceSize != null)
-              FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: sourceSize.width,
-                  height: sourceSize.height,
-                  child: preview,
-                ),
-              )
-            else
-              preview,
-            Positioned.fill(
-              child: BoundingBoxOverlay(
-                entities: controller.trackedEntities,
-                sourceSize: sourceSize,
-              ),
-            ),
-            const Positioned(
-              top: 16,
-              left: 16,
-              child: _OverlayBadge(
-                label: 'LIVE VIEW',
-                icon: Icons.blur_on_rounded,
-              ),
-            ),
-            Positioned(
-              right: 16,
-              top: 16,
-              child: _OverlayBadge(
-                label: controller.isProcessing ? 'PROCESSING' : 'IDLE',
-                icon: controller.isProcessing ? Icons.motion_photos_on : Icons.pause_circle,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

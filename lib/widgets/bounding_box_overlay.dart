@@ -6,11 +6,13 @@ class BoundingBoxOverlay extends StatelessWidget {
   const BoundingBoxOverlay({
     required this.entities,
     required this.sourceSize,
+    this.onPainted,
     super.key,
   });
 
   final List<TrackedEntity> entities;
   final Size? sourceSize;
+  final ValueChanged<Duration>? onPainted;
 
   @override
   Widget build(BuildContext context) {
@@ -19,6 +21,7 @@ class BoundingBoxOverlay extends StatelessWidget {
         painter: _BoundingBoxPainter(
           entities: entities,
           sourceSize: sourceSize,
+          onPainted: onPainted,
         ),
       ),
     );
@@ -29,15 +32,20 @@ class _BoundingBoxPainter extends CustomPainter {
   const _BoundingBoxPainter({
     required this.entities,
     required this.sourceSize,
+    required this.onPainted,
   });
 
   final List<TrackedEntity> entities;
   final Size? sourceSize;
+  final ValueChanged<Duration>? onPainted;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final paintWatch = Stopwatch()..start();
     final source = sourceSize;
     if (source == null || source.width <= 0 || source.height <= 0) {
+      paintWatch.stop();
+      onPainted?.call(paintWatch.elapsed);
       return;
     }
 
@@ -105,6 +113,8 @@ class _BoundingBoxPainter extends CustomPainter {
         ),
       );
     }
+    paintWatch.stop();
+    onPainted?.call(paintWatch.elapsed);
   }
 
   void _drawDashedRect(Canvas canvas, Rect rect, Paint paint) {

@@ -154,22 +154,11 @@ class _AppShell extends StatefulWidget {
 class _AppShellState extends State<_AppShell> {
   int _index = 0;
 
-  static const _screens = <Widget>[
-    LiveViewScreen(),
-    DashboardScreen(),
-    LearningScreen(),
-    SettingsScreen(),
-    EventLogScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(
-          index: _index,
-          children: _screens,
-        ),
+        child: _screenForIndex(_index),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -207,5 +196,15 @@ class _AppShellState extends State<_AppShell> {
         ],
       ),
     );
+  }
+
+  Widget _screenForIndex(int index) {
+    return switch (index) {
+      0 => const LiveViewScreen(),
+      1 => const DashboardScreen(),
+      2 => const LearningScreen(),
+      3 => const SettingsScreen(),
+      _ => const EventLogScreen(),
+    };
   }
 }
