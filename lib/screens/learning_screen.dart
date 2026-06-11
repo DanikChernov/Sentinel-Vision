@@ -45,6 +45,27 @@ class LearningScreen extends StatelessWidget {
                 caption: 'dataset crops captured',
               ),
               MetricTile(
+                label: 'Masks',
+                value:
+                    '${controller.perceptionResult?.segmentations.length ?? 0}',
+                caption: 'latest segmentation samples',
+              ),
+              MetricTile(
+                label: 'Pose Meta',
+                value: '${controller.perceptionResult?.poses.length ?? 0}',
+                caption: controller.settings.savePoseMetadataEnabled
+                    ? 'saving enabled'
+                    : 'available on frame',
+              ),
+              MetricTile(
+                label: 'Depth Meta',
+                value:
+                    '${controller.perceptionResult?.depth?.entityDepths.length ?? 0}',
+                caption: controller.settings.saveDepthMetadataEnabled
+                    ? 'saving enabled'
+                    : 'available on frame',
+              ),
+              MetricTile(
                 label: 'Storage',
                 value: _formatBytes(learning.metrics.approximateStorageBytes),
                 caption: 'privacy-first on-device cache',
@@ -118,121 +139,150 @@ class LearningScreen extends StatelessWidget {
           const SizedBox(height: 12),
           if (controller.persistenceSnapshot.identities.isEmpty)
             const _EmptyLearningCard(
-              message: 'No face-descriptor identities stored yet. Repeated visible people will accumulate local embedding memory here.',
+              message:
+                  'No face-descriptor identities stored yet. Repeated visible people will accumulate local embedding memory here.',
             )
           else
             Column(
-              children: controller.persistenceSnapshot.identities.map((identity) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: theme.colorScheme.outline),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          identity.preferredAlias == null
-                              ? identity.stableLabel
-                              : '${identity.stableLabel} / ${identity.preferredAlias}',
-                          style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+              children: controller.persistenceSnapshot.identities
+                  .map((identity) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: theme.colorScheme.outline),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _StatChip(label: 'Embeds', value: '${identity.embeddingCount}'),
-                            _StatChip(label: 'Sightings', value: '${identity.sightings}'),
-                            _StatChip(label: 'Recoveries', value: '${identity.recoveries}'),
-                            _StatChip(
-                              label: 'Similarity',
-                              value:
-                                  '${(identity.averageSimilarity * 100).toStringAsFixed(0)}%',
+                            Text(
+                              identity.preferredAlias == null
+                                  ? identity.stableLabel
+                                  : '${identity.stableLabel} / ${identity.preferredAlias}',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                              ),
                             ),
-                            _StatChip(
-                              label: 'Temporal',
-                              value:
-                                  '${(identity.averageTemporalConfidence * 100).toStringAsFixed(0)}%',
-                            ),
-                            _StatChip(
-                              label: 'Face',
-                              value:
-                                  '${(identity.averageFaceConfidence * 100).toStringAsFixed(0)}%',
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _StatChip(
+                                  label: 'Embeds',
+                                  value: '${identity.embeddingCount}',
+                                ),
+                                _StatChip(
+                                  label: 'Sightings',
+                                  value: '${identity.sightings}',
+                                ),
+                                _StatChip(
+                                  label: 'Recoveries',
+                                  value: '${identity.recoveries}',
+                                ),
+                                _StatChip(
+                                  label: 'Similarity',
+                                  value:
+                                      '${(identity.averageSimilarity * 100).toStringAsFixed(0)}%',
+                                ),
+                                _StatChip(
+                                  label: 'Temporal',
+                                  value:
+                                      '${(identity.averageTemporalConfidence * 100).toStringAsFixed(0)}%',
+                                ),
+                                _StatChip(
+                                  label: 'Face',
+                                  value:
+                                      '${(identity.averageFaceConfidence * 100).toStringAsFixed(0)}%',
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(growable: false),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
             ),
           const SizedBox(height: 18),
           Text('Learned Identities', style: theme.textTheme.titleLarge),
           const SizedBox(height: 12),
           if (learning.identities.isEmpty)
             const _EmptyLearningCard(
-              message: 'No learned identities yet. Repeated sightings and corrections will build local memory here.',
+              message:
+                  'No learned identities yet. Repeated sightings and corrections will build local memory here.',
             )
           else
             Column(
-              children: learning.identities.map((identity) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: theme.colorScheme.outline),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          identity.preferredAlias == null
-                              ? identity.stableLabel
-                              : '${identity.stableLabel} / ${identity.preferredAlias}',
-                          style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+              children: learning.identities
+                  .map((identity) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: theme.colorScheme.outline),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _StatChip(label: 'Class', value: identity.classLabel),
-                            _StatChip(label: 'Sightings', value: '${identity.sightings}'),
-                            _StatChip(label: 'Recoveries', value: '${identity.recoveries}'),
-                            _StatChip(
-                              label: 'Confidence',
-                              value:
-                                  '${(identity.learnedConfidence * 100).toStringAsFixed(0)}%',
+                            Text(
+                              identity.preferredAlias == null
+                                  ? identity.stableLabel
+                                  : '${identity.stableLabel} / ${identity.preferredAlias}',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                              ),
                             ),
-                            _StatChip(
-                              label: 'Corrections',
-                              value: '${identity.correctionCount}',
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _StatChip(
+                                  label: 'Class',
+                                  value: identity.classLabel,
+                                ),
+                                _StatChip(
+                                  label: 'Sightings',
+                                  value: '${identity.sightings}',
+                                ),
+                                _StatChip(
+                                  label: 'Recoveries',
+                                  value: '${identity.recoveries}',
+                                ),
+                                _StatChip(
+                                  label: 'Confidence',
+                                  value:
+                                      '${(identity.learnedConfidence * 100).toStringAsFixed(0)}%',
+                                ),
+                                _StatChip(
+                                  label: 'Corrections',
+                                  value: '${identity.correctionCount}',
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(growable: false),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
             ),
           const SizedBox(height: 18),
           Text('Corrected Labels', style: theme.textTheme.titleLarge),
           const SizedBox(height: 12),
           if (learning.correctedLabels.isEmpty)
             const _EmptyLearningCard(
-              message: 'No adaptive label mappings yet. Rename recurring objects to train local refinements.',
+              message:
+                  'No adaptive label mappings yet. Rename recurring objects to train local refinements.',
             )
           else
             Container(
@@ -242,21 +292,26 @@ class LearningScreen extends StatelessWidget {
                 border: Border.all(color: theme.colorScheme.outline),
               ),
               child: Column(
-                children: learning.correctedLabels.take(10).map((mapping) {
-                  return ListTile(
-                    title: Text(
-                      '${mapping.originalLabel} -> ${mapping.correctedLabel}',
-                      style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      'usage ${mapping.usageCount} | false positives ${mapping.falsePositiveCount}',
-                    ),
-                    trailing: Text(
-                      '${(mapping.averageLearningConfidence * 100).toStringAsFixed(0)}%',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  );
-                }).toList(growable: false),
+                children: learning.correctedLabels
+                    .take(10)
+                    .map((mapping) {
+                      return ListTile(
+                        title: Text(
+                          '${mapping.originalLabel} -> ${mapping.correctedLabel}',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'usage ${mapping.usageCount} | false positives ${mapping.falsePositiveCount}',
+                        ),
+                        trailing: Text(
+                          '${(mapping.averageLearningConfidence * 100).toStringAsFixed(0)}%',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    })
+                    .toList(growable: false),
               ),
             ),
           const SizedBox(height: 18),
@@ -264,7 +319,8 @@ class LearningScreen extends StatelessWidget {
           const SizedBox(height: 12),
           if (learning.recentSamples.isEmpty)
             const _EmptyLearningCard(
-              message: 'Enable crop capture in Settings to collect local fine-tuning samples from camera detections.',
+              message:
+                  'Enable crop capture in Settings to collect local fine-tuning samples from camera detections.',
             )
           else
             Container(
@@ -274,24 +330,29 @@ class LearningScreen extends StatelessWidget {
                 border: Border.all(color: theme.colorScheme.outline),
               ),
               child: Column(
-                children: learning.recentSamples.take(10).map((sample) {
-                  return ListTile(
-                    leading: const Icon(Icons.photo_library_outlined),
-                    title: Text(
-                      sample.correctedLabel == null
-                          ? sample.originalLabel
-                          : '${sample.originalLabel} -> ${sample.correctedLabel}',
-                      style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      '${sample.stableLabel} | ${sample.sourceType.label} | ${p.basename(sample.cropPath)}',
-                    ),
-                    trailing: Text(
-                      _formatTime(sample.timestamp),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  );
-                }).toList(growable: false),
+                children: learning.recentSamples
+                    .take(10)
+                    .map((sample) {
+                      return ListTile(
+                        leading: const Icon(Icons.photo_library_outlined),
+                        title: Text(
+                          sample.correctedLabel == null
+                              ? sample.originalLabel
+                              : '${sample.originalLabel} -> ${sample.correctedLabel}',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${sample.stableLabel} | ${sample.sourceType.label} | ${p.basename(sample.cropPath)}',
+                        ),
+                        trailing: Text(
+                          _formatTime(sample.timestamp),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    })
+                    .toList(growable: false),
               ),
             ),
         ],
@@ -318,9 +379,7 @@ class LearningScreen extends StatelessWidget {
 }
 
 class _EmptyLearningCard extends StatelessWidget {
-  const _EmptyLearningCard({
-    required this.message,
-  });
+  const _EmptyLearningCard({required this.message});
 
   final String message;
 
@@ -341,10 +400,7 @@ class _EmptyLearningCard extends StatelessWidget {
 }
 
 class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.label,
-    required this.value,
-  });
+  const _StatChip({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -360,9 +416,9 @@ class _StatChip extends StatelessWidget {
       child: Text(
         '$label: $value',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white70,
-              fontWeight: FontWeight.w700,
-            ),
+          color: Colors.white70,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

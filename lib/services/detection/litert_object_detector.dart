@@ -23,15 +23,15 @@ class LiteRtObjectDetector extends Detector {
     InferenceAcceleration acceleration = InferenceAcceleration.auto,
     int requestedInputSize = 320,
     int threadCount = 2,
-  })  : _acceleration = acceleration,
-        _requestedInputSize = requestedInputSize,
-        _threadCount = threadCount,
-        _diagnostics = DetectorDiagnostics(
-          backendName: 'LiteRT / TFLite Detector',
-          delegateName: acceleration.label,
-          threadCount: threadCount,
-          requestedInputSize: requestedInputSize,
-        );
+  }) : _acceleration = acceleration,
+       _requestedInputSize = requestedInputSize,
+       _threadCount = threadCount,
+       _diagnostics = DetectorDiagnostics(
+         backendName: 'LiteRT / TFLite Detector',
+         delegateName: acceleration.label,
+         threadCount: threadCount,
+         requestedInputSize: requestedInputSize,
+       );
 
   final String modelAssetPath;
   final String labelMapAssetPath;
@@ -81,10 +81,14 @@ class LiteRtObjectDetector extends Detector {
 
   @override
   Future<void> applySettings(AppSettings settings) async {
+    final previousAcceleration = _acceleration;
+    final previousInputSize = _requestedInputSize;
+    final previousThreadCount = _threadCount;
     final nextAcceleration = settings.acceleration;
     final nextInputSize = settings.modelInputSize;
     final nextThreadCount = settings.tfliteThreadCount.clamp(1, 8);
-    final configChanged = nextAcceleration != _acceleration ||
+    final configChanged =
+        nextAcceleration != _acceleration ||
         nextInputSize != _requestedInputSize ||
         nextThreadCount != _threadCount;
     if (!configChanged) {
@@ -99,7 +103,22 @@ class LiteRtObjectDetector extends Detector {
       threadCount: _threadCount,
       requestedInputSize: _requestedInputSize,
     );
-    await _restartWorker();
+    try {
+      await _restartWorker();
+    } catch (error) {
+      _acceleration = previousAcceleration;
+      _requestedInputSize = previousInputSize;
+      _threadCount = previousThreadCount;
+      _diagnostics = _diagnostics.copyWith(
+        delegateName: _acceleration.label,
+        threadCount: _threadCount,
+        requestedInputSize: _requestedInputSize,
+        lastInferenceError:
+            'Rejected detector settings and reverted to the previous configuration: $error',
+      );
+      await _restartWorker();
+      rethrow;
+    }
   }
 
   @override
@@ -117,12 +136,9 @@ class LiteRtObjectDetector extends Detector {
       clearLastInferenceError: true,
     );
 
-    final response = await _sendWorkerRequest(
-      'detect',
-      <String, Object?>{
-        'frame': _serializeFrame(frame),
-      },
-    );
+    final response = await _sendWorkerRequest('detect', <String, Object?>{
+      'frame': _serializeFrame(frame),
+    });
 
     final detections = _deserializeDetections(
       response['detections'] as List<dynamic>? ?? const <dynamic>[],
@@ -135,12 +151,9 @@ class LiteRtObjectDetector extends Detector {
   @override
   Future<DetectorTestResult> runTestInference({FrameContext? frame}) async {
     await initialize();
-    final response = await _sendWorkerRequest(
-      'test',
-      <String, Object?>{
-        if (frame != null) 'frame': _serializeFrame(frame),
-      },
-    );
+    final response = await _sendWorkerRequest('test', <String, Object?>{
+      if (frame != null) 'frame': _serializeFrame(frame),
+    });
     _diagnostics = _copyDiagnosticsFromWorker(response);
     final result = DetectorTestResult(
       success: (response['success'] as bool?) ?? false,
@@ -161,36 +174,34 @@ class LiteRtObjectDetector extends Detector {
     final receivePort = ReceivePort();
     final workerReady = Completer<SendPort>();
     _workerReceivePort = receivePort;
-    _workerSubscription = receivePort.listen(
-      (dynamic message) {
-        if (message is SendPort) {
-          if (!workerReady.isCompleted) {
-            workerReady.complete(message);
-          }
-          return;
+    _workerSubscription = receivePort.listen((dynamic message) {
+      if (message is SendPort) {
+        if (!workerReady.isCompleted) {
+          workerReady.complete(message);
         }
+        return;
+      }
 
-        if (message is! Map) {
-          return;
-        }
-        final payload = Map<String, Object?>.from(message);
-        final requestId = payload['id'] as int?;
-        if (requestId == null) {
-          return;
-        }
-        final completer = _pendingRequests.remove(requestId);
-        if (completer == null) {
-          return;
-        }
-        if ((payload['ok'] as bool?) ?? false) {
-          completer.complete(payload);
-        } else {
-          completer.completeError(
-            StateError(payload['error'] as String? ?? 'Worker request failed.'),
-          );
-        }
-      },
-    );
+      if (message is! Map) {
+        return;
+      }
+      final payload = Map<String, Object?>.from(message);
+      final requestId = payload['id'] as int?;
+      if (requestId == null) {
+        return;
+      }
+      final completer = _pendingRequests.remove(requestId);
+      if (completer == null) {
+        return;
+      }
+      if ((payload['ok'] as bool?) ?? false) {
+        completer.complete(payload);
+      } else {
+        completer.completeError(
+          StateError(payload['error'] as String? ?? 'Worker request failed.'),
+        );
+      }
+    });
 
     _workerIsolate = await Isolate.spawn(
       _liteRtWorkerMain,
@@ -200,21 +211,27 @@ class LiteRtObjectDetector extends Detector {
     _workerSendPort = await workerReady.future;
 
     final modelData = await rootBundle.load(modelAssetPath);
-    final labelMap = await rootBundle.loadString(labelMapAssetPath);
-    final response = await _sendWorkerRequest(
-      'initialize',
-      <String, Object?>{
-        'modelBytes': TransferableTypedData.fromList(
-          <TypedData>[modelData.buffer.asUint8List()],
-        ),
-        'labelMap': labelMap,
-        'scoreThreshold': scoreThreshold,
-        'maxResults': maxResults,
-        'requestedInputSize': _requestedInputSize,
-        'threadCount': _threadCount,
-        'acceleration': _acceleration.name,
-      },
-    );
+    late final String labelMap;
+    late final String labelMapName;
+    try {
+      labelMap = await rootBundle.loadString(labelMapAssetPath);
+      labelMapName = labelMapAssetPath;
+    } catch (_) {
+      labelMap = _defaultCocoLabelMap.join('\n');
+      labelMapName = 'built-in-coco';
+    }
+    final response = await _sendWorkerRequest('initialize', <String, Object?>{
+      'modelBytes': TransferableTypedData.fromList(<TypedData>[
+        modelData.buffer.asUint8List(),
+      ]),
+      'labelMap': labelMap,
+      'labelMapName': labelMapName,
+      'scoreThreshold': scoreThreshold,
+      'maxResults': maxResults,
+      'requestedInputSize': _requestedInputSize,
+      'threadCount': _threadCount,
+      'acceleration': _acceleration.name,
+    });
 
     _diagnostics = _copyDiagnosticsFromWorker(response);
   }
@@ -252,17 +269,17 @@ class LiteRtObjectDetector extends Detector {
     final requestId = _nextRequestId++;
     final completer = Completer<Map<String, Object?>>();
     _pendingRequests[requestId] = completer;
-    sendPort.send(
-      <String, Object?>{
-        'id': requestId,
-        'op': operation,
-        ...payload,
-      },
-    );
+    sendPort.send(<String, Object?>{
+      'id': requestId,
+      'op': operation,
+      ...payload,
+    });
     return completer.future;
   }
 
-  DetectorDiagnostics _copyDiagnosticsFromWorker(Map<String, Object?> response) {
+  DetectorDiagnostics _copyDiagnosticsFromWorker(
+    Map<String, Object?> response,
+  ) {
     return _diagnostics.copyWith(
       backendName: response['backendName'] as String? ?? backendLabel,
       modelLoaded: (response['modelLoaded'] as bool?) ?? true,
@@ -280,42 +297,54 @@ class LiteRtObjectDetector extends Detector {
       inputShape: _toIntList(response['inputShape']),
       outputShapes: _toShapeList(response['outputShapes']),
       inputTensorType:
-          response['inputTensorType'] as String? ?? _diagnostics.inputTensorType,
+          response['inputTensorType'] as String? ??
+          _diagnostics.inputTensorType,
       outputTensorTypes: _toStringList(response['outputTensorTypes']),
+      labelMapLoaded:
+          (response['labelMapLoaded'] as bool?) ?? _diagnostics.labelMapLoaded,
+      labelMapName:
+          response['labelMapName'] as String? ?? _diagnostics.labelMapName,
+      labelCount: (response['labelCount'] as int?) ?? _diagnostics.labelCount,
+      rawClassIds: _toIntList(response['rawClassIds']),
+      mappedLabels: _toStringList(response['mappedLabels']),
+      unknownLabelCount:
+          (response['unknownLabelCount'] as int?) ??
+          _diagnostics.unknownLabelCount,
+      missingClassIds: _toIntList(response['missingClassIds']),
       preprocessSummary:
           response['preprocessSummary'] as String? ??
-              _diagnostics.preprocessSummary,
+          _diagnostics.preprocessSummary,
       parserMode: response['parserMode'] as String? ?? _diagnostics.parserMode,
       rawCandidateCount:
           (response['rawCandidateCount'] as int?) ??
-              _diagnostics.rawCandidateCount,
+          _diagnostics.rawCandidateCount,
       filteredCandidateCount:
           (response['filteredCandidateCount'] as int?) ??
-              _diagnostics.filteredCandidateCount,
+          _diagnostics.filteredCandidateCount,
       sampleOutputValues: _toDoubleList(response['sampleOutputValues']),
       sourceAcquisitionMs:
           (response['sourceAcquisitionMs'] as num?)?.toDouble() ??
-              _diagnostics.sourceAcquisitionMs,
+          _diagnostics.sourceAcquisitionMs,
       colorConversionMs:
           (response['colorConversionMs'] as num?)?.toDouble() ??
-              _diagnostics.colorConversionMs,
+          _diagnostics.colorConversionMs,
       rotationMs:
           (response['rotationMs'] as num?)?.toDouble() ??
-              _diagnostics.rotationMs,
-      resizeMs: (response['resizeMs'] as num?)?.toDouble() ??
-          _diagnostics.resizeMs,
+          _diagnostics.rotationMs,
+      resizeMs:
+          (response['resizeMs'] as num?)?.toDouble() ?? _diagnostics.resizeMs,
       normalizationMs:
           (response['normalizationMs'] as num?)?.toDouble() ??
-              _diagnostics.normalizationMs,
+          _diagnostics.normalizationMs,
       tensorCopyMs:
           (response['tensorCopyMs'] as num?)?.toDouble() ??
-              _diagnostics.tensorCopyMs,
+          _diagnostics.tensorCopyMs,
       inferenceMs:
           (response['inferenceMs'] as num?)?.toDouble() ??
-              _diagnostics.inferenceMs,
+          _diagnostics.inferenceMs,
       outputParsingMs:
           (response['outputParsingMs'] as num?)?.toDouble() ??
-              _diagnostics.outputParsingMs,
+          _diagnostics.outputParsingMs,
       usingIsolateWorker: true,
       lastInferenceError: response['lastInferenceError'] as String?,
       clearLastInferenceError: response['lastInferenceError'] == null,
@@ -326,21 +355,26 @@ class LiteRtObjectDetector extends Detector {
     List<dynamic> rawDetections,
     DateTime timestamp,
   ) {
-    return rawDetections.map((dynamic item) {
-      final map = Map<String, Object?>.from(item as Map);
-      return DetectionResult(
-        id: map['id'] as String? ?? 'det',
-        classLabel: map['classLabel'] as String? ?? 'object',
-        confidence: (map['confidence'] as num?)?.toDouble() ?? 0,
-        boundingBox: BoundingBox(
-          left: (map['left'] as num?)?.toDouble() ?? 0,
-          top: (map['top'] as num?)?.toDouble() ?? 0,
-          width: (map['width'] as num?)?.toDouble() ?? 0,
-          height: (map['height'] as num?)?.toDouble() ?? 0,
-        ),
-        timestamp: timestamp,
-      );
-    }).toList(growable: false);
+    return rawDetections
+        .map((dynamic item) {
+          final map = Map<String, Object?>.from(item as Map);
+          return DetectionResult(
+            id: map['id'] as String? ?? 'det',
+            classId: (map['classId'] as num?)?.toInt() ?? -1,
+            classLabel: map['classLabel'] as String? ?? 'unknown',
+            sourceModel:
+                map['sourceModel'] as String? ?? 'LiteRT / TFLite Detector',
+            confidence: (map['confidence'] as num?)?.toDouble() ?? 0,
+            boundingBox: BoundingBox(
+              left: (map['left'] as num?)?.toDouble() ?? 0,
+              top: (map['top'] as num?)?.toDouble() ?? 0,
+              width: (map['width'] as num?)?.toDouble() ?? 0,
+              height: (map['height'] as num?)?.toDouble() ?? 0,
+            ),
+            timestamp: timestamp,
+          );
+        })
+        .toList(growable: false);
   }
 
   List<int> _toIntList(Object? value) {
@@ -356,7 +390,9 @@ class LiteRtObjectDetector extends Detector {
     if (value is! List) {
       return const <List<int>>[];
     }
-    return value.map((dynamic item) => _toIntList(item)).toList(growable: false);
+    return value
+        .map((dynamic item) => _toIntList(item))
+        .toList(growable: false);
   }
 
   List<double> _toDoubleList(Object? value) {
@@ -377,6 +413,99 @@ class LiteRtObjectDetector extends Detector {
         .toList(growable: false);
   }
 }
+
+const List<String> _defaultCocoLabelMap = <String>[
+  'person',
+  'bicycle',
+  'car',
+  'motorcycle',
+  'airplane',
+  'bus',
+  'train',
+  'truck',
+  'boat',
+  'traffic light',
+  'fire hydrant',
+  '???',
+  'stop sign',
+  'parking meter',
+  'bench',
+  'bird',
+  'cat',
+  'dog',
+  'horse',
+  'sheep',
+  'cow',
+  'elephant',
+  'bear',
+  'zebra',
+  'giraffe',
+  '???',
+  'backpack',
+  'umbrella',
+  '???',
+  '???',
+  'handbag',
+  'tie',
+  'suitcase',
+  'frisbee',
+  'skis',
+  'snowboard',
+  'sports ball',
+  'kite',
+  'baseball bat',
+  'baseball glove',
+  'skateboard',
+  'surfboard',
+  'tennis racket',
+  'bottle',
+  '???',
+  'wine glass',
+  'cup',
+  'fork',
+  'knife',
+  'spoon',
+  'bowl',
+  'banana',
+  'apple',
+  'sandwich',
+  'orange',
+  'broccoli',
+  'carrot',
+  'hot dog',
+  'pizza',
+  'donut',
+  'cake',
+  'chair',
+  'couch',
+  'potted plant',
+  'bed',
+  '???',
+  'dining table',
+  '???',
+  '???',
+  'toilet',
+  '???',
+  'tv',
+  'laptop',
+  'mouse',
+  'remote',
+  'keyboard',
+  'cell phone',
+  'microwave',
+  'oven',
+  'toaster',
+  'sink',
+  'refrigerator',
+  '???',
+  'book',
+  'clock',
+  'vase',
+  'scissors',
+  'teddy bear',
+  'hair drier',
+  'toothbrush',
+];
 
 void _liteRtWorkerMain(SendPort mainSendPort) {
   final receivePort = ReceivePort();
@@ -425,6 +554,11 @@ class _LiteRtWorkerState {
   litert.Interpreter? _interpreter;
   litert.Delegate? _delegate;
   List<String> _labels = const <String>[];
+  String _labelMapName = 'unbound';
+  List<int> _lastRawClassIds = const <int>[];
+  List<String> _lastMappedLabels = const <String>[];
+  List<int> _lastMissingClassIds = const <int>[];
+  int _lastUnknownLabelCount = 0;
   List<_TensorInfo> _outputTensors = const <_TensorInfo>[];
   _OutputLayout? _outputLayout;
   List<List<double>> _anchors = const <List<double>>[];
@@ -452,6 +586,11 @@ class _LiteRtWorkerState {
         .materialize()
         .asUint8List();
     _labels = _parseLabelMap(payload['labelMap'] as String? ?? '');
+    _labelMapName = payload['labelMapName'] as String? ?? 'unbound';
+    _lastRawClassIds = const <int>[];
+    _lastMappedLabels = const <String>[];
+    _lastMissingClassIds = const <int>[];
+    _lastUnknownLabelCount = 0;
     _requestedInputSize = (payload['requestedInputSize'] as int?) ?? 320;
     _threadCount = ((payload['threadCount'] as int?) ?? 2).clamp(1, 8);
     _maxResults = (payload['maxResults'] as int?) ?? 16;
@@ -463,8 +602,13 @@ class _LiteRtWorkerState {
       _acceleration,
       _threadCount,
     );
-    final (options, delegate) = litert.InterpreterFactory.create(performanceConfig);
-    final interpreter = litert.Interpreter.fromBuffer(modelBytes, options: options);
+    final (options, delegate) = litert.InterpreterFactory.create(
+      performanceConfig,
+    );
+    final interpreter = litert.Interpreter.fromBuffer(
+      modelBytes,
+      options: options,
+    );
     _delegate = delegate;
     _delegateName = _delegateLabelFor(_acceleration, delegate);
 
@@ -480,10 +624,12 @@ class _LiteRtWorkerState {
         (_requestedInputSize != nativeShape[1] ||
             _requestedInputSize != nativeShape[2])) {
       try {
-        interpreter.resizeInputTensor(
-          0,
-          <int>[1, _requestedInputSize, _requestedInputSize, 3],
-        );
+        interpreter.resizeInputTensor(0, <int>[
+          1,
+          _requestedInputSize,
+          _requestedInputSize,
+          3,
+        ]);
         interpreter.allocateTensors();
       } catch (_) {
         // Fixed-shape models fall back to their native input size.
@@ -498,16 +644,21 @@ class _LiteRtWorkerState {
     _inputTensorType = configuredInput.type;
     _inputScale = configuredInput.params.scale;
     _inputZeroPoint = configuredInput.params.zeroPoint;
-    _outputTensors = interpreter.getOutputTensors().asMap().entries.map((entry) {
-      final tensor = entry.value;
-      return _TensorInfo(
-        index: entry.key,
-        shape: tensor.shape,
-        type: tensor.type,
-        scale: tensor.params.scale,
-        zeroPoint: tensor.params.zeroPoint,
-      );
-    }).toList(growable: false);
+    _outputTensors = interpreter
+        .getOutputTensors()
+        .asMap()
+        .entries
+        .map((entry) {
+          final tensor = entry.value;
+          return _TensorInfo(
+            index: entry.key,
+            shape: tensor.shape,
+            type: tensor.type,
+            scale: tensor.params.scale,
+            zeroPoint: tensor.params.zeroPoint,
+          );
+        })
+        .toList(growable: false);
     _outputLayout = _discoverOutputLayout(_outputTensors);
     _anchors = _outputLayout?.mode == _OutputParserMode.efficientDetAnchors
         ? _generateEfficientDetAnchors(imageSize: _inputWidth)
@@ -571,17 +722,21 @@ class _LiteRtWorkerState {
     final sampleValues = _sampleOutputValues(interpreter);
     parseWatch.stop();
 
-    final detections = filtered.map((detection) {
-      return <String, Object?>{
-        'id': detection.id,
-        'classLabel': detection.classLabel,
-        'confidence': detection.confidence,
-        'left': detection.boundingBox.left,
-        'top': detection.boundingBox.top,
-        'width': detection.boundingBox.width,
-        'height': detection.boundingBox.height,
-      };
-    }).toList(growable: false);
+    final detections = filtered
+        .map((detection) {
+          return <String, Object?>{
+            'id': detection.id,
+            'classId': detection.classId,
+            'classLabel': detection.classLabel,
+            'sourceModel': detection.sourceModel,
+            'confidence': detection.confidence,
+            'left': detection.boundingBox.left,
+            'top': detection.boundingBox.top,
+            'width': detection.boundingBox.width,
+            'height': detection.boundingBox.height,
+          };
+        })
+        .toList(growable: false);
 
     return _baseResponse(
       preprocessSummary: preprocess.summary,
@@ -714,6 +869,13 @@ class _LiteRtWorkerState {
       'outputTensorTypes': _outputTensors
           .map((tensor) => tensor.type.name)
           .toList(growable: false),
+      'labelMapLoaded': _labels.isNotEmpty,
+      'labelMapName': _labelMapName,
+      'labelCount': _labels.length,
+      'rawClassIds': _lastRawClassIds,
+      'mappedLabels': _lastMappedLabels,
+      'unknownLabelCount': _lastUnknownLabelCount,
+      'missingClassIds': _lastMissingClassIds,
       'preprocessSummary': preprocessSummary,
       'parserMode': _outputLayout?.label ?? 'unbound',
       'rawCandidateCount': rawCandidateCount,
@@ -775,7 +937,9 @@ class _LiteRtWorkerState {
         _fillFromBgraSnapshot(snapshot, frame.rotation, letterbox);
         break;
       case FramePixelFormat.unsupported:
-        throw StateError('Unsupported snapshot pixel format for LiteRT worker.');
+        throw StateError(
+          'Unsupported snapshot pixel format for LiteRT worker.',
+        );
     }
     conversionWatch.stop();
 
@@ -842,7 +1006,8 @@ class _LiteRtWorkerState {
       final rowOffset = destY * _inputWidth * _inputChannels;
       final sourceRowOffset = y * letterbox.newWidth * _inputChannels;
       for (var x = 0; x < letterbox.newWidth; x += 1) {
-        final destOffset = rowOffset + ((x + letterbox.padLeft) * _inputChannels);
+        final destOffset =
+            rowOffset + ((x + letterbox.padLeft) * _inputChannels);
         final sourceOffset = sourceRowOffset + (x * _inputChannels);
         _writeRgbPixel(
           destOffset,
@@ -878,11 +1043,7 @@ class _LiteRtWorkerState {
       return;
     }
     if (_int8Buffer case final buffer?) {
-      buffer.fillRange(
-        0,
-        buffer.length,
-        _inputZeroPoint.clamp(-128, 127),
-      );
+      buffer.fillRange(0, buffer.length, _inputZeroPoint.clamp(-128, 127));
       return;
     }
     _uint8Buffer!.fillRange(
@@ -896,7 +1057,8 @@ class _LiteRtWorkerState {
     _fillPadding();
     for (var y = 0; y < _inputHeight; y += 1) {
       for (var x = 0; x < _inputWidth; x += 1) {
-        final offset = (y * _inputWidth * _inputChannels) + (x * _inputChannels);
+        final offset =
+            (y * _inputWidth * _inputChannels) + (x * _inputChannels);
         final signal = ((x + y) % 255).clamp(0, 255);
         _writeRgbPixel(offset, signal, 127, 255 - signal);
       }
@@ -930,9 +1092,10 @@ class _LiteRtWorkerState {
           rawHeight,
           rotation,
         );
-        final index = (rawPoint.$2 * plane.bytesPerRow) +
-            (rawPoint.$1 * bytesPerPixel);
-        final destOffset = rowOffset + ((x + letterbox.padLeft) * _inputChannels);
+        final index =
+            (rawPoint.$2 * plane.bytesPerRow) + (rawPoint.$1 * bytesPerPixel);
+        final destOffset =
+            rowOffset + ((x + letterbox.padLeft) * _inputChannels);
         _writeRgbPixel(
           destOffset,
           plane.bytes[index + 2],
@@ -991,7 +1154,8 @@ class _LiteRtWorkerState {
             .round()
             .clamp(0, 255);
         final b = (yp + (1.770 * (up - 128))).round().clamp(0, 255);
-        final destOffset = rowOffset + ((x + letterbox.padLeft) * _inputChannels);
+        final destOffset =
+            rowOffset + ((x + letterbox.padLeft) * _inputChannels);
         _writeRgbPixel(destOffset, r, g, b);
       }
     }
@@ -1006,21 +1170,21 @@ class _LiteRtWorkerState {
   ) {
     return switch (rotation) {
       FrameRotation.rotation90 => (
-          orientedY.clamp(0, rawWidth - 1),
-          (rawHeight - 1 - orientedX).clamp(0, rawHeight - 1),
-        ),
+        orientedY.clamp(0, rawWidth - 1),
+        (rawHeight - 1 - orientedX).clamp(0, rawHeight - 1),
+      ),
       FrameRotation.rotation180 => (
-          (rawWidth - 1 - orientedX).clamp(0, rawWidth - 1),
-          (rawHeight - 1 - orientedY).clamp(0, rawHeight - 1),
-        ),
+        (rawWidth - 1 - orientedX).clamp(0, rawWidth - 1),
+        (rawHeight - 1 - orientedY).clamp(0, rawHeight - 1),
+      ),
       FrameRotation.rotation270 => (
-          (rawWidth - 1 - orientedY).clamp(0, rawWidth - 1),
-          orientedX.clamp(0, rawHeight - 1),
-        ),
+        (rawWidth - 1 - orientedY).clamp(0, rawWidth - 1),
+        orientedX.clamp(0, rawHeight - 1),
+      ),
       FrameRotation.rotation0 => (
-          orientedX.clamp(0, rawWidth - 1),
-          orientedY.clamp(0, rawHeight - 1),
-        ),
+        orientedX.clamp(0, rawWidth - 1),
+        orientedY.clamp(0, rawHeight - 1),
+      ),
     };
   }
 
@@ -1090,38 +1254,74 @@ class _LiteRtWorkerState {
     required double scoreThreshold,
   }) {
     final rawDetections = switch (outputLayout.mode) {
-      _OutputParserMode.efficientDetAnchors =>
-        _parseEfficientDetAnchors(interpreter, outputLayout, scoreThreshold),
-      _OutputParserMode.ssdSplit =>
-        _parseSsdSplit(interpreter, outputLayout, scoreThreshold),
-      _OutputParserMode.yoloCombined =>
-        _parseCombinedCandidates(
-          interpreter,
-          outputLayout,
-          true,
-          scoreThreshold,
-        ),
-      _OutputParserMode.candidateRows =>
-        _parseCandidateRows(interpreter, outputLayout, scoreThreshold),
+      _OutputParserMode.efficientDetAnchors => _parseEfficientDetAnchors(
+        interpreter,
+        outputLayout,
+        scoreThreshold,
+      ),
+      _OutputParserMode.ssdSplit => _parseSsdSplit(
+        interpreter,
+        outputLayout,
+        scoreThreshold,
+      ),
+      _OutputParserMode.yoloCombined => _parseCombinedCandidates(
+        interpreter,
+        outputLayout,
+        true,
+        scoreThreshold,
+      ),
+      _OutputParserMode.candidateRows => _parseCandidateRows(
+        interpreter,
+        outputLayout,
+        scoreThreshold,
+      ),
     };
 
     final unpadded = _removeLetterboxPadding(rawDetections, padding);
-    return unpadded.asMap().entries.map((entry) {
-      final raw = entry.value;
-      final classLabel = _classLabelFor(raw.classIndex);
-      return _ParsedDetection(
-        id: 'det-${frame.frameNumber}-${entry.key}',
-        classLabel: classLabel,
-        confidence: raw.score,
-        boundingBox: BoundingBox(
-          left: raw.boundingBox.xmin * frame.sourceWidth,
-          top: raw.boundingBox.ymin * frame.sourceHeight,
-          width: (raw.boundingBox.xmax - raw.boundingBox.xmin) * frame.sourceWidth,
-          height:
-              (raw.boundingBox.ymax - raw.boundingBox.ymin) * frame.sourceHeight,
-        ),
-      );
-    }).toList(growable: false);
+    final parsed = unpadded
+        .asMap()
+        .entries
+        .map((entry) {
+          final raw = entry.value;
+          final classLabel = _classLabelFor(raw.classIndex);
+          return _ParsedDetection(
+            id: 'det-${frame.frameNumber}-${entry.key}',
+            classId: raw.classIndex,
+            classLabel: classLabel,
+            sourceModel: 'LiteRT / TFLite Detector',
+            confidence: raw.score,
+            boundingBox: BoundingBox(
+              left: raw.boundingBox.xmin * frame.sourceWidth,
+              top: raw.boundingBox.ymin * frame.sourceHeight,
+              width:
+                  (raw.boundingBox.xmax - raw.boundingBox.xmin) *
+                  frame.sourceWidth,
+              height:
+                  (raw.boundingBox.ymax - raw.boundingBox.ymin) *
+                  frame.sourceHeight,
+            ),
+          );
+        })
+        .toList(growable: false);
+    _lastRawClassIds =
+        unpadded
+            .map((detection) => detection.classIndex)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    _lastMappedLabels =
+        parsed
+            .map((detection) => detection.classLabel)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    _lastMissingClassIds = _lastRawClassIds
+        .where((classId) => _isUnknownClassId(classId))
+        .toList(growable: false);
+    _lastUnknownLabelCount = parsed
+        .where((detection) => detection.classLabel == 'unknown')
+        .length;
+    return parsed;
   }
 
   List<_RawDetection> _parseEfficientDetAnchors(
@@ -1260,16 +1460,12 @@ class _LiteRtWorkerState {
     final candidates = layout.candidateCount;
 
     for (var candidate = 0; candidate < candidates; candidate += 1) {
-      final values = List<double>.generate(
-        attributes,
-        (attribute) {
-          final index = layout.transposeCombined
-              ? (attribute * candidates) + candidate
-              : (candidate * attributes) + attribute;
-          return raw[index];
-        },
-        growable: false,
-      );
+      final values = List<double>.generate(attributes, (attribute) {
+        final index = layout.transposeCombined
+            ? (attribute * candidates) + candidate
+            : (candidate * attributes) + attribute;
+        return raw[index];
+      }, growable: false);
       final parsed = _parseCandidateVector(
         values,
         expectsCenterBoxes: expectsCenterBoxes,
@@ -1412,12 +1608,14 @@ class _LiteRtWorkerState {
       ..sort((left, right) => right.confidence.compareTo(left.confidence));
     final weighted = litert.weightedNms(
       sorted
-          .map((detection) => <double>[
-                detection.boundingBox.left / frame.sourceWidth,
-                detection.boundingBox.top / frame.sourceHeight,
-                detection.boundingBox.right / frame.sourceWidth,
-                detection.boundingBox.bottom / frame.sourceHeight,
-              ])
+          .map(
+            (detection) => <double>[
+              detection.boundingBox.left / frame.sourceWidth,
+              detection.boundingBox.top / frame.sourceHeight,
+              detection.boundingBox.right / frame.sourceWidth,
+              detection.boundingBox.bottom / frame.sourceHeight,
+            ],
+          )
           .toList(growable: false),
       sorted.map((detection) => detection.confidence).toList(growable: false),
       iouThres: 0.45,
@@ -1445,10 +1643,18 @@ class _LiteRtWorkerState {
     final results = <_RawDetection>[];
     for (final detection in detections) {
       final rect = _RectF(
-        ((detection.boundingBox.xmin - padLeft) / scaleX).clamp(0.0, 1.0).toDouble(),
-        ((detection.boundingBox.ymin - padTop) / scaleY).clamp(0.0, 1.0).toDouble(),
-        ((detection.boundingBox.xmax - padLeft) / scaleX).clamp(0.0, 1.0).toDouble(),
-        ((detection.boundingBox.ymax - padTop) / scaleY).clamp(0.0, 1.0).toDouble(),
+        ((detection.boundingBox.xmin - padLeft) / scaleX)
+            .clamp(0.0, 1.0)
+            .toDouble(),
+        ((detection.boundingBox.ymin - padTop) / scaleY)
+            .clamp(0.0, 1.0)
+            .toDouble(),
+        ((detection.boundingBox.xmax - padLeft) / scaleX)
+            .clamp(0.0, 1.0)
+            .toDouble(),
+        ((detection.boundingBox.ymax - padTop) / scaleY)
+            .clamp(0.0, 1.0)
+            .toDouble(),
       );
       if (rect.xmax - rect.xmin <= 0.0001 || rect.ymax - rect.ymin <= 0.0001) {
         continue;
@@ -1477,7 +1683,9 @@ class _LiteRtWorkerState {
         final flattenedTail = shape.length == 2 ? shape[1] : shape.last;
         if (shape.length >= 2 && flattenedTail == 4 && boxesIndex == null) {
           boxesIndex = index;
-        } else if (flattenedTail > 1 && flattenedTail < 5 && classesIndex == null) {
+        } else if (flattenedTail > 1 &&
+            flattenedTail < 5 &&
+            classesIndex == null) {
           classesIndex = index;
         } else if (flattenedTail == 1 || shape.length == 1) {
           scoresIndex ??= index;
@@ -1567,10 +1775,7 @@ class _LiteRtWorkerState {
     );
   }
 
-  List<double> _dequantizedOutput(
-    litert.Tensor tensor,
-    _TensorInfo info,
-  ) {
+  List<double> _dequantizedOutput(litert.Tensor tensor, _TensorInfo info) {
     final bytes = tensor.data;
     if (info.type == litert.TensorType.float32) {
       final values = Float32List.view(
@@ -1587,11 +1792,13 @@ class _LiteRtWorkerState {
         bytes.offsetInBytes,
         bytes.lengthInBytes,
       );
-      return raw.map((value) {
-        return info.scale == 0
-            ? value.toDouble()
-            : (value - info.zeroPoint) * info.scale;
-      }).toList(growable: false);
+      return raw
+          .map((value) {
+            return info.scale == 0
+                ? value.toDouble()
+                : (value - info.zeroPoint) * info.scale;
+          })
+          .toList(growable: false);
     }
 
     final raw = Uint8List.view(
@@ -1599,11 +1806,13 @@ class _LiteRtWorkerState {
       bytes.offsetInBytes,
       bytes.lengthInBytes,
     );
-    return raw.map((value) {
-      return info.scale == 0
-          ? value.toDouble()
-          : (value - info.zeroPoint) * info.scale;
-    }).toList(growable: false);
+    return raw
+        .map((value) {
+          return info.scale == 0
+              ? value.toDouble()
+              : (value - info.zeroPoint) * info.scale;
+        })
+        .toList(growable: false);
   }
 
   List<double> _sampleOutputValues(litert.Interpreter interpreter) {
@@ -1622,11 +1831,19 @@ class _LiteRtWorkerState {
   }
 
   String _classLabelFor(int classIndex) {
-    if (classIndex < 0 || classIndex >= _labels.length) {
-      return 'object';
+    if (_isUnknownClassId(classIndex)) {
+      return 'unknown';
     }
     final label = _labels[classIndex].trim().toLowerCase().replaceAll('_', ' ');
-    return label.isEmpty || label == '???' ? 'object' : label;
+    return label.isEmpty || label == '???' ? 'unknown' : label;
+  }
+
+  bool _isUnknownClassId(int classIndex) {
+    if (classIndex < 0 || classIndex >= _labels.length) {
+      return true;
+    }
+    final label = _labels[classIndex].trim().toLowerCase();
+    return label.isEmpty || label == '???' || label == 'unknown';
   }
 
   List<String> _parseLabelMap(String raw) {
@@ -1656,12 +1873,18 @@ class _LiteRtWorkerState {
     if (normalizedWidth <= 0 || normalizedHeight <= 0) {
       return null;
     }
-    final left = (normalizedCx - (normalizedWidth * 0.5)).clamp(0.0, 1.0).toDouble();
-    final top = (normalizedCy - (normalizedHeight * 0.5)).clamp(0.0, 1.0).toDouble();
-    final right =
-        (normalizedCx + (normalizedWidth * 0.5)).clamp(0.0, 1.0).toDouble();
-    final bottom =
-        (normalizedCy + (normalizedHeight * 0.5)).clamp(0.0, 1.0).toDouble();
+    final left = (normalizedCx - (normalizedWidth * 0.5))
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final top = (normalizedCy - (normalizedHeight * 0.5))
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final right = (normalizedCx + (normalizedWidth * 0.5))
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final bottom = (normalizedCy + (normalizedHeight * 0.5))
+        .clamp(0.0, 1.0)
+        .toDouble();
     if (right <= left || bottom <= top) {
       return null;
     }
@@ -1732,18 +1955,18 @@ class _LiteRtWorkerState {
   ) {
     return switch (acceleration) {
       InferenceAcceleration.cpu => litert.PerformanceConfig(
-          mode: litert.PerformanceMode.disabled,
-          numThreads: threadCount,
-        ),
+        mode: litert.PerformanceMode.disabled,
+        numThreads: threadCount,
+      ),
       InferenceAcceleration.xnnpack => litert.PerformanceConfig.xnnpack(
-          numThreads: threadCount,
-        ),
+        numThreads: threadCount,
+      ),
       InferenceAcceleration.gpu => litert.PerformanceConfig.gpu(
-          numThreads: threadCount,
-        ),
+        numThreads: threadCount,
+      ),
       InferenceAcceleration.auto => litert.PerformanceConfig.auto(
-          numThreads: threadCount,
-        ),
+        numThreads: threadCount,
+      ),
     };
   }
 
@@ -1782,9 +2005,7 @@ Map<String, Object?> _serializeFrame(FrameContext frame) {
     'scoreThreshold': 0.05,
     'encodedImageBytes': frame.encodedImageBytes == null
         ? null
-        : TransferableTypedData.fromList(
-            <TypedData>[frame.encodedImageBytes!],
-          ),
+        : TransferableTypedData.fromList(<TypedData>[frame.encodedImageBytes!]),
     'snapshot': frame.snapshot == null
         ? null
         : <String, Object?>{
@@ -1792,13 +2013,15 @@ Map<String, Object?> _serializeFrame(FrameContext frame) {
             'height': frame.snapshot!.height,
             'pixelFormat': frame.snapshot!.pixelFormat.name,
             'planes': frame.snapshot!.planes
-                .map((plane) => <String, Object?>{
-                      'bytes': TransferableTypedData.fromList(
-                        <TypedData>[plane.bytes],
-                      ),
-                      'bytesPerRow': plane.bytesPerRow,
-                      'bytesPerPixel': plane.bytesPerPixel,
-                    })
+                .map(
+                  (plane) => <String, Object?>{
+                    'bytes': TransferableTypedData.fromList(<TypedData>[
+                      plane.bytes,
+                    ]),
+                    'bytesPerRow': plane.bytesPerRow,
+                    'bytesPerPixel': plane.bytesPerPixel,
+                  },
+                )
                 .toList(growable: false),
           },
   };
@@ -1813,10 +2036,9 @@ _WorkerFrame _deserializeWorkerFrame(Map<String, Object?> payload) {
     rotation: _frameRotationFromDegrees((payload['rotation'] as int?) ?? 0),
     sourceAcquisitionMs:
         (payload['sourceAcquisitionMs'] as num?)?.toDouble() ?? 0,
-    encodedImageBytes:
-        (payload['encodedImageBytes'] as TransferableTypedData?)
-            ?.materialize()
-            .asUint8List(),
+    encodedImageBytes: (payload['encodedImageBytes'] as TransferableTypedData?)
+        ?.materialize()
+        .asUint8List(),
     snapshot: snapshotMap == null
         ? null
         : _WorkerSnapshot(
@@ -1825,16 +2047,18 @@ _WorkerFrame _deserializeWorkerFrame(Map<String, Object?> payload) {
             pixelFormat: _pixelFormatFromName(
               snapshotMap['pixelFormat'] as String? ?? 'unsupported',
             ),
-            planes: (snapshotMap['planes'] as List<dynamic>).map((dynamic item) {
-              final plane = Map<String, Object?>.from(item as Map);
-              return _WorkerPlane(
-                bytes: (plane['bytes'] as TransferableTypedData)
-                    .materialize()
-                    .asUint8List(),
-                bytesPerRow: plane['bytesPerRow'] as int,
-                bytesPerPixel: plane['bytesPerPixel'] as int?,
-              );
-            }).toList(growable: false),
+            planes: (snapshotMap['planes'] as List<dynamic>)
+                .map((dynamic item) {
+                  final plane = Map<String, Object?>.from(item as Map);
+                  return _WorkerPlane(
+                    bytes: (plane['bytes'] as TransferableTypedData)
+                        .materialize()
+                        .asUint8List(),
+                    bytesPerRow: plane['bytesPerRow'] as int,
+                    bytesPerPixel: plane['bytesPerPixel'] as int?,
+                  );
+                })
+                .toList(growable: false),
           ),
     debugMode: (payload['debugMode'] as bool?) ?? false,
     scoreThreshold: (payload['scoreThreshold'] as num?)?.toDouble() ?? 0.05,
@@ -2017,13 +2241,17 @@ class _RawDetection {
 class _ParsedDetection {
   const _ParsedDetection({
     required this.id,
+    required this.classId,
     required this.classLabel,
+    required this.sourceModel,
     required this.confidence,
     required this.boundingBox,
   });
 
   final String id;
+  final int classId;
   final String classLabel;
+  final String sourceModel;
   final double confidence;
   final BoundingBox boundingBox;
 }

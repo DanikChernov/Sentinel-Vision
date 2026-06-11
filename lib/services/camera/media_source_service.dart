@@ -62,9 +62,7 @@ class MediaSourceService {
     await _initializeCameraIfNeeded();
   }
 
-  Future<void> updateCameraCaptureProfile(
-    CameraCaptureProfile profile,
-  ) async {
+  Future<void> updateCameraCaptureProfile(CameraCaptureProfile profile) async {
     if (_cameraCaptureProfile == profile) {
       return;
     }
@@ -198,7 +196,9 @@ class MediaSourceService {
     final rearCameras = cameras.where((camera) {
       return camera.lensDirection == CameraLensDirection.back;
     });
-    final preferredCamera = rearCameras.isNotEmpty ? rearCameras.first : cameras.first;
+    final preferredCamera = rearCameras.isNotEmpty
+        ? rearCameras.first
+        : cameras.first;
 
     final controller = CameraController(
       preferredCamera,
@@ -333,13 +333,15 @@ class MediaSourceService {
       _ => FramePixelFormat.unsupported,
     };
 
-    final planes = image.planes.map((plane) {
-      return FramePlaneData(
-        bytes: Uint8List.fromList(plane.bytes),
-        bytesPerRow: plane.bytesPerRow,
-        bytesPerPixel: plane.bytesPerPixel,
-      );
-    }).toList(growable: false);
+    final planes = image.planes
+        .map((plane) {
+          return FramePlaneData(
+            bytes: Uint8List.fromList(plane.bytes),
+            bytesPerRow: plane.bytesPerRow,
+            bytesPerPixel: plane.bytesPerPixel,
+          );
+        })
+        .toList(growable: false);
 
     return FrameSnapshot(
       width: image.width,
@@ -359,7 +361,8 @@ class MediaSourceService {
     final orientation = controller.value.deviceOrientation;
 
     if (Platform.isIOS) {
-      final isPortrait = orientation == DeviceOrientation.portraitUp ||
+      final isPortrait =
+          orientation == DeviceOrientation.portraitUp ||
           orientation == DeviceOrientation.portraitDown;
       if (!isPortrait || image.height >= image.width) {
         return FrameRotation.rotation0;

@@ -6,6 +6,7 @@ import '../../models/frame_context.dart';
 import '../../models/learning_models.dart';
 import '../../models/pipeline_event.dart';
 import '../../models/tracked_entity.dart';
+import '../orchestrator/perception_result.dart';
 import 'adaptive_label_refiner.dart';
 import 'feedback_trainer.dart';
 import 'identity_pattern_memory.dart';
@@ -28,11 +29,12 @@ class SentinelLearningCore {
     AdaptiveLabelRefiner? adaptiveLabelRefiner,
     IdentityPatternMemory? identityPatternMemory,
     TrainingSampleExporter? trainingSampleExporter,
-  })  : _usageMemoryStore = usageMemoryStore ?? UsageMemoryStore(),
-        _adaptiveLabelRefiner = adaptiveLabelRefiner ?? AdaptiveLabelRefiner(),
-        _identityPatternMemory = identityPatternMemory ?? IdentityPatternMemory(),
-        _trainingSampleExporter =
-            trainingSampleExporter ?? TrainingSampleExporter() {
+  }) : _usageMemoryStore = usageMemoryStore ?? UsageMemoryStore(),
+       _adaptiveLabelRefiner = adaptiveLabelRefiner ?? AdaptiveLabelRefiner(),
+       _identityPatternMemory =
+           identityPatternMemory ?? IdentityPatternMemory(),
+       _trainingSampleExporter =
+           trainingSampleExporter ?? TrainingSampleExporter() {
     _feedbackTrainer = FeedbackTrainer(
       labelRefiner: _adaptiveLabelRefiner,
       identityPatternMemory: _identityPatternMemory,
@@ -90,8 +92,11 @@ class SentinelLearningCore {
         identitySummary = _identityPatternMemory.observeEntity(entity, frame);
         await _usageMemoryStore.upsertIdentityPattern(identitySummary);
         updatedEntity = updatedEntity.copyWith(
-          identityConfidence:
-              _identityPatternMemory.scoreEntity(entity, identitySummary, frame),
+          identityConfidence: _identityPatternMemory.scoreEntity(
+            entity,
+            identitySummary,
+            frame,
+          ),
           correctionCount: math.max(
             entity.correctionCount,
             identitySummary.correctionCount,
@@ -154,8 +159,9 @@ class SentinelLearningCore {
     }
 
     _rebuildSnapshot(
-      observationDelta:
-          refinedEntities.where((entity) => entity.isVisible).length,
+      observationDelta: refinedEntities
+          .where((entity) => entity.isVisible)
+          .length,
       trainingSampleDelta: sampleCount,
       refreshStorageBytes: sampleCount > 0,
     );
@@ -174,16 +180,14 @@ class SentinelLearningCore {
       events.add(
         PipelineEvent(
           type: PipelineEventType.learningObservation,
-          message: 'Captured $sampleCount training sample(s) for local learning.',
+          message:
+              'Captured $sampleCount training sample(s) for local learning.',
           timestamp: frame.timestamp,
         ),
       );
     }
 
-    return LearningProcessingResult(
-      entities: refinedEntities,
-      events: events,
-    );
+    return LearningProcessingResult(entities: refinedEntities, events: events);
   }
 
   Future<TrackedEntity> applyCorrection({
@@ -270,7 +274,9 @@ class SentinelLearningCore {
     return result.updatedEntity;
   }
 
-  Future<String?> exportTrainingDataset() async {
+  Future<String?> exportTrainingDataset({
+    PerceptionResult? perceptionResult,
+  }) async {
     if (!_isInitialized) {
       return null;
     }
@@ -283,6 +289,7 @@ class SentinelLearningCore {
     final exportPath = await _trainingSampleExporter.exportDataset(
       store: _usageMemoryStore,
       samples: samples,
+      perceptionResult: perceptionResult,
     );
 
     await _refreshRecentSamples();
@@ -319,23 +326,28 @@ class SentinelLearningCore {
     int falsePositiveDelta = 0,
     bool refreshStorageBytes = false,
   }) {
-    final identities = updatedIdentity == null
-        ? _snapshot.identities
-        : <LearnedIdentitySummary>[
-            updatedIdentity,
-            ..._snapshot.identities.where(
-              (identity) => identity.stableLabel != updatedIdentity.stableLabel,
-            ),
-          ]..sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
+    final identities =
+        updatedIdentity == null
+              ? _snapshot.identities
+              : <LearnedIdentitySummary>[
+                  updatedIdentity,
+                  ..._snapshot.identities.where(
+                    (identity) =>
+                        identity.stableLabel != updatedIdentity.stableLabel,
+                  ),
+                ]
+          ..sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
 
-    final mappings = updatedMapping == null
-        ? _snapshot.correctedLabels
-        : <CorrectedLabelSummary>[
-            updatedMapping,
-            ..._snapshot.correctedLabels.where(
-              (mapping) => mapping.key != updatedMapping.key,
-            ),
-          ]..sort((a, b) => b.usageCount.compareTo(a.usageCount));
+    final mappings =
+        updatedMapping == null
+              ? _snapshot.correctedLabels
+              : <CorrectedLabelSummary>[
+                  updatedMapping,
+                  ..._snapshot.correctedLabels.where(
+                    (mapping) => mapping.key != updatedMapping.key,
+                  ),
+                ]
+          ..sort((a, b) => b.usageCount.compareTo(a.usageCount));
 
     _snapshot = _snapshot.copyWith(
       identities: identities,
@@ -403,7 +415,8 @@ class SentinelLearningCore {
     }
 
     final totalGain = identities.fold<double>(0, (sum, identity) {
-      return sum + (identity.learnedConfidence - identity.averageDetectorConfidence);
+      return sum +
+          (identity.learnedConfidence - identity.averageDetectorConfidence);
     });
     return totalGain / identities.length;
   }

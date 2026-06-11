@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/pipeline_event.dart';
 
 class EventLogCard extends StatelessWidget {
-  const EventLogCard({
-    required this.event,
-    super.key,
-  });
+  const EventLogCard({required this.event, super.key});
 
   final PipelineEvent event;
 
@@ -45,10 +42,7 @@ class EventLogCard extends StatelessWidget {
               color: color,
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.45),
-                  blurRadius: 12,
-                ),
+                BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 12),
               ],
             ),
           ),

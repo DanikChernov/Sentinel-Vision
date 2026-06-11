@@ -42,7 +42,9 @@ class FrameImageUtils {
     final width = boundingBox.width.ceil();
     final height = boundingBox.height.ceil();
     final cropWidth = math.min(image.width - left, math.max(4, width)).toInt();
-    final cropHeight = math.min(image.height - top, math.max(4, height)).toInt();
+    final cropHeight = math
+        .min(image.height - top, math.max(4, height))
+        .toInt();
 
     if (cropWidth <= 0 || cropHeight <= 0) {
       return null;
@@ -75,7 +77,8 @@ class FrameImageUtils {
 
     for (var y = 0; y < snapshot.height; y += 1) {
       for (var x = 0; x < snapshot.width; x += 1) {
-        final index = (y * plane.bytesPerRow) + (x * (plane.bytesPerPixel ?? 4));
+        final index =
+            (y * plane.bytesPerRow) + (x * (plane.bytesPerPixel ?? 4));
         final b = plane.bytes[index];
         final g = plane.bytes[index + 1];
         final r = plane.bytes[index + 2];

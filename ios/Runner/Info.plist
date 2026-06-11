@@ -27,7 +27,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Sentinel Vision Mobile uses the camera for on-device object detection, tracking, and local learning.</string>
+	<string>Sentinel Vision Mobile uses the camera for biometric login, object detection, tracking, and local learning.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Sentinel Vision Mobile can use Face ID as an optional local fallback to unlock the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Sentinel Vision Mobile can load local video files for on-device analysis.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -67,8 +67,10 @@ class _BoundingBoxPainter extends CustomPainter {
           ? const Color(0xFF3ED4D3)
           : const Color(0xFFFF9A3D);
       final rect = Rect.fromLTWH(
-        destinationRect.left + ((entity.boundingBox.left - sourceRect.left) * scaleX),
-        destinationRect.top + ((entity.boundingBox.top - sourceRect.top) * scaleY),
+        destinationRect.left +
+            ((entity.boundingBox.left - sourceRect.left) * scaleX),
+        destinationRect.top +
+            ((entity.boundingBox.top - sourceRect.top) * scaleY),
         entity.boundingBox.width * scaleX,
         entity.boundingBox.height * scaleY,
       );
@@ -76,9 +78,7 @@ class _BoundingBoxPainter extends CustomPainter {
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = entity.isVisible ? 2.6 : 1.8
-        ..color = entity.isVisible
-            ? color
-            : color.withValues(alpha: 0.42);
+        ..color = entity.isVisible ? color : color.withValues(alpha: 0.42);
 
       if (entity.isVisible) {
         canvas.drawRRect(
@@ -90,7 +90,7 @@ class _BoundingBoxPainter extends CustomPainter {
       }
 
       final label =
-          '${entity.stableLabel} ${(entity.displayConfidence * 100).toStringAsFixed(0)}%';
+          '${entity.overlayLabel} ${(entity.displayConfidence * 100).toStringAsFixed(0)}%';
       final textPainter = TextPainter(
         text: TextSpan(
           text: label,
@@ -108,7 +108,8 @@ class _BoundingBoxPainter extends CustomPainter {
         canvas,
         Offset(
           rect.left,
-          (rect.top - textPainter.height - 6).clamp(4.0, size.height - textPainter.height)
+          (rect.top - textPainter.height - 6)
+              .clamp(4.0, size.height - textPainter.height)
               .toDouble(),
         ),
       );
@@ -122,7 +123,14 @@ class _BoundingBoxPainter extends CustomPainter {
     const gap = 5.0;
     _drawDashedLine(canvas, rect.topLeft, rect.topRight, paint, dash, gap);
     _drawDashedLine(canvas, rect.topRight, rect.bottomRight, paint, dash, gap);
-    _drawDashedLine(canvas, rect.bottomRight, rect.bottomLeft, paint, dash, gap);
+    _drawDashedLine(
+      canvas,
+      rect.bottomRight,
+      rect.bottomLeft,
+      paint,
+      dash,
+      gap,
+    );
     _drawDashedLine(canvas, rect.bottomLeft, rect.topLeft, paint, dash, gap);
   }
 
@@ -142,7 +150,8 @@ class _BoundingBoxPainter extends CustomPainter {
     double drawn = 0;
     while (drawn < totalDistance) {
       final from = start + (direction * drawn);
-      final to = start +
+      final to =
+          start +
           (direction * (drawn + dash).clamp(0.0, totalDistance).toDouble());
       canvas.drawLine(from, to, paint);
       drawn += dash + gap;
@@ -151,6 +160,7 @@ class _BoundingBoxPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BoundingBoxPainter oldDelegate) {
-    return oldDelegate.entities != entities || oldDelegate.sourceSize != sourceSize;
+    return oldDelegate.entities != entities ||
+        oldDelegate.sourceSize != sourceSize;
   }
 }

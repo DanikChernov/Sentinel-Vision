@@ -32,14 +32,14 @@ class PersistenceProcessor {
     IdentityMatcher? identityMatcher,
     TemporalConsistencyEngine? temporalConsistencyEngine,
     FaceAlignmentProcessor? faceAlignmentProcessor,
-  })  : _memoryStore = memoryStore ?? EmbeddingMemoryStore(),
-        _embeddingAdapter =
-            embeddingAdapter ?? LocalDescriptorFaceEmbeddingAdapter(),
-        _identityMatcher = identityMatcher ?? const IdentityMatcher(),
-        _temporalConsistencyEngine =
-            temporalConsistencyEngine ?? const TemporalConsistencyEngine(),
-        _faceAlignmentProcessor =
-            faceAlignmentProcessor ?? const FaceAlignmentProcessor();
+  }) : _memoryStore = memoryStore ?? EmbeddingMemoryStore(),
+       _embeddingAdapter =
+           embeddingAdapter ?? LocalDescriptorFaceEmbeddingAdapter(),
+       _identityMatcher = identityMatcher ?? const IdentityMatcher(),
+       _temporalConsistencyEngine =
+           temporalConsistencyEngine ?? const TemporalConsistencyEngine(),
+       _faceAlignmentProcessor =
+           faceAlignmentProcessor ?? const FaceAlignmentProcessor();
 
   final EmbeddingMemoryStore _memoryStore;
   final FaceEmbeddingAdapter _embeddingAdapter;
@@ -89,17 +89,26 @@ class PersistenceProcessor {
   }) async {
     await initialize();
     if (!settings.faceAnalysisPersistenceEnabled || entities.isEmpty) {
-      return PersistenceProcessingResult(entities: entities, snapshot: _snapshot);
+      return PersistenceProcessingResult(
+        entities: entities,
+        snapshot: _snapshot,
+      );
     }
 
     final detector = _faceDetector;
     if (detector == null) {
-      return PersistenceProcessingResult(entities: entities, snapshot: _snapshot);
+      return PersistenceProcessingResult(
+        entities: entities,
+        snapshot: _snapshot,
+      );
     }
 
     final decodedFrame = FrameImageUtils.decodeFrame(frame);
     if (decodedFrame == null) {
-      return PersistenceProcessingResult(entities: entities, snapshot: _snapshot);
+      return PersistenceProcessingResult(
+        entities: entities,
+        snapshot: _snapshot,
+      );
     }
 
     final records = (await _memoryStore.loadRecords()).toList(growable: true);
@@ -127,12 +136,12 @@ class PersistenceProcessor {
 
       final faces = List<Face>.from(
         await detector.processImage(
-        InputImage.fromBitmap(
-          bitmap: FrameImageUtils.rgbaBytes(personCrop),
-          width: personCrop.width,
-          height: personCrop.height,
+          InputImage.fromBitmap(
+            bitmap: FrameImageUtils.rgbaBytes(personCrop),
+            width: personCrop.width,
+            height: personCrop.height,
+          ),
         ),
-      ),
         growable: true,
       );
       if (faces.isEmpty) {
@@ -166,7 +175,9 @@ class PersistenceProcessor {
 
       final match = _identityMatcher.findBestMatch(
         embedding: embedded.embedding,
-        records: records.where((record) => record.classLabel == entity.classLabel),
+        records: records.where(
+          (record) => record.classLabel == entity.classLabel,
+        ),
         similarityThreshold: settings.embeddingSimilarityThreshold,
       );
 
@@ -183,8 +194,9 @@ class PersistenceProcessor {
           embeddingSimilarity: match.similarity,
           enableTemporalPersistence: settings.temporalPersistenceEnabled,
         );
-        final temporalConfidence =
-            settings.temporalPersistenceEnabled ? combined : match.similarity;
+        final temporalConfidence = settings.temporalPersistenceEnabled
+            ? combined
+            : match.similarity;
 
         if (combined >= settings.embeddingSimilarityThreshold &&
             (match.stableLabel == entity.stableLabel ||
@@ -193,6 +205,7 @@ class PersistenceProcessor {
           reservedLabels.add(match.stableLabel);
           updatedEntity = updatedEntity.copyWith(
             stableLabel: match.stableLabel,
+            persistentEntityId: match.stableLabel,
             recoveredInFrame: entity.stableLabel != match.stableLabel,
             identityConfidence: math.max(
               entity.identityConfidence ?? 0,
@@ -227,7 +240,9 @@ class PersistenceProcessor {
         }
       }
 
-      final existing = records.where((record) => record.stableLabel == updatedEntity.stableLabel);
+      final existing = records.where(
+        (record) => record.stableLabel == updatedEntity.stableLabel,
+      );
       final prior = existing.isEmpty ? null : existing.first;
       final nextRecord = _mergeRecord(
         prior: prior,
@@ -299,12 +314,12 @@ class PersistenceProcessor {
     final nextCount = prior.embeddingCount + 1;
     final mergedEmbedding = List<double>.generate(
       math.min(prior.embedding.length, embedding.length),
-      (index) => ((prior.embedding[index] * prior.embeddingCount) + embedding[index]) /
+      (index) =>
+          ((prior.embedding[index] * prior.embeddingCount) + embedding[index]) /
           nextCount,
       growable: false,
     );
-    final nextRecoveries =
-        prior.recoveries + (entity.recoveredInFrame ? 1 : 0);
+    final nextRecoveries = prior.recoveries + (entity.recoveredInFrame ? 1 : 0);
     final averageSimilarity = _rollingAverage(
       prior.averageSimilarity,
       prior.embeddingCount,
@@ -359,11 +374,13 @@ class PersistenceProcessor {
     final recoveryRate = records.isEmpty
         ? 0.0
         : records
-                .map((record) => record.sightings == 0
-                    ? 0.0
-                    : record.recoveries / record.sightings)
-                .reduce((left, right) => left + right) /
-            records.length;
+                  .map(
+                    (record) => record.sightings == 0
+                        ? 0.0
+                        : record.recoveries / record.sightings,
+                  )
+                  .reduce((left, right) => left + right) /
+              records.length;
 
     _snapshot = PersistenceSnapshot(
       backend: _embeddingAdapter.backend,

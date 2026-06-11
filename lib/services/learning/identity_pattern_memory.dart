@@ -31,7 +31,8 @@ class IdentityPatternMemory {
       );
   }
 
-  LearnedIdentitySummary? summaryFor(String stableLabel) => _patterns[stableLabel];
+  LearnedIdentitySummary? summaryFor(String stableLabel) =>
+      _patterns[stableLabel];
 
   LearnedIdentitySummary observeEntity(
     TrackedEntity entity,
@@ -56,7 +57,10 @@ class IdentityPatternMemory {
       sightings: nextSightings,
       recoveries:
           (existing?.recoveries ?? 0) + (entity.recoveredInFrame ? 1 : 0),
-      correctionCount: math.max(existing?.correctionCount ?? 0, entity.correctionCount),
+      correctionCount: math.max(
+        existing?.correctionCount ?? 0,
+        entity.correctionCount,
+      ),
       averageDetectorConfidence: _rollingAverage(
         existing?.averageDetectorConfidence ?? detectorConfidence,
         detectorConfidence,
@@ -106,31 +110,32 @@ class IdentityPatternMemory {
   }) {
     final existing = _patterns[stableLabel];
     final now = correctedAt ?? DateTime.now();
-    final updated = (existing ??
-            LearnedIdentitySummary(
-              stableLabel: stableLabel,
-              classLabel: 'object',
+    final updated =
+        (existing ??
+                LearnedIdentitySummary(
+                  stableLabel: stableLabel,
+                  classLabel: 'object',
+                  preferredAlias: alias,
+                  sightings: 0,
+                  recoveries: 0,
+                  correctionCount: 0,
+                  averageDetectorConfidence: 0.5,
+                  learnedConfidence: 0.5,
+                  averageWidth: 0,
+                  averageHeight: 0,
+                  averageCenterX: 0,
+                  averageCenterY: 0,
+                  averageMotion: 0,
+                  lastSeenAt: now,
+                ))
+            .copyWith(
               preferredAlias: alias,
-              sightings: 0,
-              recoveries: 0,
-              correctionCount: 0,
-              averageDetectorConfidence: 0.5,
-              learnedConfidence: 0.5,
-              averageWidth: 0,
-              averageHeight: 0,
-              averageCenterX: 0,
-              averageCenterY: 0,
-              averageMotion: 0,
+              correctionCount: (existing?.correctionCount ?? 0) + 1,
+              learnedConfidence: ((existing?.learnedConfidence ?? 0.5) + 0.1)
+                  .clamp(0.0, 0.99)
+                  .toDouble(),
               lastSeenAt: now,
-            ))
-        .copyWith(
-          preferredAlias: alias,
-          correctionCount: (existing?.correctionCount ?? 0) + 1,
-          learnedConfidence: ((existing?.learnedConfidence ?? 0.5) + 0.1)
-              .clamp(0.0, 0.99)
-              .toDouble(),
-          lastSeenAt: now,
-        );
+            );
 
     _patterns[stableLabel] = updated;
     return updated;
@@ -148,18 +153,28 @@ class IdentityPatternMemory {
       height: summary.averageHeight,
     );
     final positionScore =
-        1 - averageBox.normalizedCenterDistance(entity.boundingBox, frame.sourceSize);
+        1 -
+        averageBox.normalizedCenterDistance(
+          entity.boundingBox,
+          frame.sourceSize,
+        );
     final sizeScore = 1 - averageBox.sizeDelta(entity.boundingBox);
     final lastCenter = _lastCenters[entity.stableLabel];
     final motion = lastCenter == null
         ? 0.0
-        : _normalizedDistance(lastCenter, entity.boundingBox.center, frame.sourceSize);
-    final motionScore = 1 - (summary.averageMotion - motion).abs().clamp(0.0, 1.0);
+        : _normalizedDistance(
+            lastCenter,
+            entity.boundingBox.center,
+            frame.sourceSize,
+          );
+    final motionScore =
+        1 - (summary.averageMotion - motion).abs().clamp(0.0, 1.0);
     final timeGapSeconds =
         frame.timestamp.difference(summary.lastSeenAt).inMilliseconds / 1000.0;
     final timeGapScore = 1 - (timeGapSeconds / 12).clamp(0.0, 1.0);
 
-    final score = 0.28 +
+    final score =
+        0.28 +
         (positionScore.clamp(0.0, 1.0) * 0.18) +
         (sizeScore.clamp(0.0, 1.0) * 0.14) +
         (motionScore.clamp(0.0, 1.0) * 0.1) +
@@ -180,7 +195,9 @@ class IdentityPatternMemory {
 
   double _normalizedDistance(Offset a, Offset b, Size size) {
     final delta = a - b;
-    final diagonal = math.sqrt((size.width * size.width) + (size.height * size.height));
+    final diagonal = math.sqrt(
+      (size.width * size.width) + (size.height * size.height),
+    );
     if (diagonal == 0) {
       return 0;
     }

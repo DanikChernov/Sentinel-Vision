@@ -42,7 +42,15 @@ class LocalDescriptorFaceEmbeddingAdapter extends FaceEmbeddingAdapter {
     ];
 
     for (final quadrant in quadrants) {
-      embedding.addAll(_histogramForRegion(resized, quadrant.$1, quadrant.$2, quadrant.$3, quadrant.$4));
+      embedding.addAll(
+        _histogramForRegion(
+          resized,
+          quadrant.$1,
+          quadrant.$2,
+          quadrant.$3,
+          quadrant.$4,
+        ),
+      );
     }
     embedding.addAll(_gradientSignature(resized));
 
@@ -98,9 +106,11 @@ class LocalDescriptorFaceEmbeddingAdapter extends FaceEmbeddingAdapter {
     for (var y = 8; y < image.height; y += 16) {
       for (var x = 8; x < image.width; x += 16) {
         final center = image.getPixel(x, y).luminanceNormalized.toDouble();
-        final dx = image.getPixel(x + 1, y).luminanceNormalized.toDouble() -
+        final dx =
+            image.getPixel(x + 1, y).luminanceNormalized.toDouble() -
             image.getPixel(x - 1, y).luminanceNormalized.toDouble();
-        final dy = image.getPixel(x, y + 1).luminanceNormalized.toDouble() -
+        final dy =
+            image.getPixel(x, y + 1).luminanceNormalized.toDouble() -
             image.getPixel(x, y - 1).luminanceNormalized.toDouble();
         values.add(center);
         values.add(dx);

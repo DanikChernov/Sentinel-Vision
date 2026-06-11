@@ -14,86 +14,91 @@ import 'package:sentinel_vision_mobile/services/learning/learning_core.dart';
 import 'package:sentinel_vision_mobile/services/learning/usage_memory_store.dart';
 
 void main() {
-  test('learning core reuses corrected object labels for future matches', () async {
-    final tempDir = await Directory.systemTemp.createTemp('sentinel_learning_');
-    final core = SentinelLearningCore(
-      usageMemoryStore: UsageMemoryStore(storageRootPath: tempDir.path),
-    );
-    await core.initialize();
+  test(
+    'learning core reuses corrected object labels for future matches',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'sentinel_learning_',
+      );
+      final core = SentinelLearningCore(
+        usageMemoryStore: UsageMemoryStore(storageRootPath: tempDir.path),
+      );
+      await core.initialize();
 
-    final settings = const AppSettings();
-    final timestamp = DateTime.utc(2026, 1, 1, 12, 0, 0);
-    final frame1 = FrameContext(
-      frameNumber: 1,
-      sourceSize: const Size(640, 360),
-      timestamp: timestamp,
-      sourceType: VisionSourceType.camera,
-    );
-    final observed = await core.observeFrame(
-      frame: frame1,
-      settings: settings,
-      entities: [
-        TrackedEntity(
-          trackId: 'track-001',
-          stableLabel: 'object-001',
-          classLabel: 'cup',
-          boundingBox: const BoundingBox(
-            left: 120,
-            top: 120,
-            width: 110,
-            height: 110,
+      final settings = const AppSettings();
+      final timestamp = DateTime.utc(2026, 1, 1, 12, 0, 0);
+      final frame1 = FrameContext(
+        frameNumber: 1,
+        sourceSize: const Size(640, 360),
+        timestamp: timestamp,
+        sourceType: VisionSourceType.camera,
+      );
+      final observed = await core.observeFrame(
+        frame: frame1,
+        settings: settings,
+        entities: [
+          TrackedEntity(
+            trackId: 'track-001',
+            stableLabel: 'object-001',
+            classLabel: 'cup',
+            boundingBox: const BoundingBox(
+              left: 120,
+              top: 120,
+              width: 110,
+              height: 110,
+            ),
+            confidence: 0.61,
+            detectorConfidence: 0.61,
+            firstSeenAt: timestamp,
+            lastSeenAt: timestamp,
           ),
-          confidence: 0.61,
-          detectorConfidence: 0.61,
-          firstSeenAt: timestamp,
-          lastSeenAt: timestamp,
-        ),
-      ],
-    );
+        ],
+      );
 
-    await core.applyCorrection(
-      entity: observed.entities.single,
-      correctedLabel: 'coffee mug',
-      frame: frame1,
-      settings: settings,
-    );
+      await core.applyCorrection(
+        entity: observed.entities.single,
+        correctedLabel: 'coffee mug',
+        frame: frame1,
+        settings: settings,
+      );
 
-    final frame2 = FrameContext(
-      frameNumber: 2,
-      sourceSize: const Size(640, 360),
-      timestamp: timestamp.add(const Duration(seconds: 1)),
-      sourceType: VisionSourceType.camera,
-    );
-    final refined = await core.observeFrame(
-      frame: frame2,
-      settings: settings,
-      entities: [
-        TrackedEntity(
-          trackId: 'track-002',
-          stableLabel: 'object-002',
-          classLabel: 'cup',
-          boundingBox: const BoundingBox(
-            left: 124,
-            top: 118,
-            width: 112,
-            height: 108,
+      final frame2 = FrameContext(
+        frameNumber: 2,
+        sourceSize: const Size(640, 360),
+        timestamp: timestamp.add(const Duration(seconds: 1)),
+        sourceType: VisionSourceType.camera,
+      );
+      final refined = await core.observeFrame(
+        frame: frame2,
+        settings: settings,
+        entities: [
+          TrackedEntity(
+            trackId: 'track-002',
+            stableLabel: 'object-002',
+            classLabel: 'cup',
+            boundingBox: const BoundingBox(
+              left: 124,
+              top: 118,
+              width: 112,
+              height: 108,
+            ),
+            confidence: 0.6,
+            detectorConfidence: 0.6,
+            firstSeenAt: frame2.timestamp,
+            lastSeenAt: frame2.timestamp,
           ),
-          confidence: 0.6,
-          detectorConfidence: 0.6,
-          firstSeenAt: frame2.timestamp,
-          lastSeenAt: frame2.timestamp,
-        ),
-      ],
-    );
+        ],
+      );
 
-    expect(refined.entities.single.learnedLabel, 'coffee mug');
-    expect(core.snapshot.correctedLabels, hasLength(1));
-    expect(core.snapshot.correctedLabels.single.correctedLabel, 'coffee mug');
-    expect(core.snapshot.metrics.correctionCount, 1);
+      expect(refined.entities.single.learnedLabel, 'coffee mug');
+      expect(core.snapshot.correctedLabels, hasLength(1));
+      expect(core.snapshot.correctedLabels.single.correctedLabel, 'coffee mug');
+      expect(core.snapshot.metrics.correctionCount, 1);
 
-    await core.dispose();
-    await tempDir.delete(recursive: true);
-  });
+      await core.dispose();
+      await tempDir.delete(recursive: true);
+    },
+  );
 
   test('learning core reinforces corrected person aliases locally', () async {
     final tempDir = await Directory.systemTemp.createTemp('sentinel_learning_');
@@ -229,17 +234,17 @@ void main() {
     final manifest = jsonDecode(manifestJson) as List<dynamic>;
 
     expect(manifest, hasLength(30));
-    expect(core.snapshot.recentSamples.every((sample) => sample.exported), isTrue);
+    expect(
+      core.snapshot.recentSamples.every((sample) => sample.exported),
+      isTrue,
+    );
 
     await core.dispose();
     await tempDir.delete(recursive: true);
   });
 }
 
-FrameSnapshot _bgraSnapshot({
-  required int width,
-  required int height,
-}) {
+FrameSnapshot _bgraSnapshot({required int width, required int height}) {
   final bytes = Uint8List(width * height * 4);
   for (var index = 0; index < width * height; index += 1) {
     final offset = index * 4;
@@ -254,11 +259,7 @@ FrameSnapshot _bgraSnapshot({
     height: height,
     pixelFormat: FramePixelFormat.bgra8888,
     planes: [
-      FramePlaneData(
-        bytes: bytes,
-        bytesPerRow: width * 4,
-        bytesPerPixel: 4,
-      ),
+      FramePlaneData(bytes: bytes, bytesPerRow: width * 4, bytesPerPixel: 4),
     ],
   );
 }

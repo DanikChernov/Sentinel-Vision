@@ -11,6 +11,10 @@ class TrackedEntity {
     required this.confidence,
     required this.firstSeenAt,
     required this.lastSeenAt,
+    this.detectionId,
+    this.classId = -1,
+    this.sourceModel = 'unknown',
+    this.persistentEntityId,
     this.detectorConfidence,
     this.semanticLabel,
     this.learnedLabel,
@@ -29,7 +33,11 @@ class TrackedEntity {
 
   final String trackId;
   final String stableLabel;
+  final String? detectionId;
+  final int classId;
   final String classLabel;
+  final String sourceModel;
+  final String? persistentEntityId;
   final double? detectorConfidence;
   final String? semanticLabel;
   final String? learnedLabel;
@@ -49,16 +57,47 @@ class TrackedEntity {
   final bool isVisible;
   final bool recoveredInFrame;
 
+  String get effectiveClassLabel {
+    final normalized = classLabel.trim().toLowerCase();
+    if (normalized.isEmpty || normalized == '???') {
+      return 'unknown';
+    }
+    return normalized;
+  }
+
+  String get trackLabel => _formatTrackLabel(trackId);
+
+  String? get persistentLabel {
+    final id = persistentEntityId;
+    if (id == null || id.trim().isEmpty || id == trackId) {
+      return null;
+    }
+    return _formatPersistentLabel(id);
+  }
+
+  String get overlayLabel {
+    final persistent = persistentLabel;
+    if (persistent != null) {
+      return '$effectiveClassLabel $persistent / $trackLabel';
+    }
+    return '$effectiveClassLabel #${_idSuffix(trackId)}';
+  }
+
   String get displayLabel {
     final preferredLabel = learnedLabel ?? semanticLabel;
-    return preferredLabel == null ? stableLabel : '$stableLabel / $preferredLabel';
+    return preferredLabel == null
+        ? overlayLabel
+        : '$overlayLabel / $preferredLabel';
   }
 
   String get detailLabel {
     final parts = <String>[
       if (learnedLabel != null) learnedLabel!,
-      if (semanticLabel != null && semanticLabel != learnedLabel) semanticLabel!,
-      classLabel,
+      if (semanticLabel != null && semanticLabel != learnedLabel)
+        semanticLabel!,
+      effectiveClassLabel,
+      'track $trackLabel',
+      if (persistentLabel != null) 'persistent ${persistentLabel!}',
     ];
     return parts.join(' | ');
   }
@@ -72,7 +111,11 @@ class TrackedEntity {
     return TrackedEntity(
       trackId: trackId,
       stableLabel: stableLabel,
+      detectionId: detectionId,
+      classId: classId,
       classLabel: classLabel,
+      sourceModel: sourceModel,
+      persistentEntityId: persistentEntityId,
       boundingBox: boundingBox,
       confidence: confidence,
       detectorConfidence: detectorConfidence,
@@ -88,7 +131,12 @@ class TrackedEntity {
   TrackedEntity copyWith({
     String? trackId,
     String? stableLabel,
+    String? detectionId,
+    int? classId,
     String? classLabel,
+    String? sourceModel,
+    String? persistentEntityId,
+    bool clearPersistentEntityId = false,
     double? detectorConfidence,
     String? semanticLabel,
     String? learnedLabel,
@@ -111,7 +159,13 @@ class TrackedEntity {
     return TrackedEntity(
       trackId: trackId ?? this.trackId,
       stableLabel: stableLabel ?? this.stableLabel,
+      detectionId: detectionId ?? this.detectionId,
+      classId: classId ?? this.classId,
       classLabel: classLabel ?? this.classLabel,
+      sourceModel: sourceModel ?? this.sourceModel,
+      persistentEntityId: clearPersistentEntityId
+          ? null
+          : persistentEntityId ?? this.persistentEntityId,
       detectorConfidence: detectorConfidence ?? this.detectorConfidence,
       semanticLabel: semanticLabel ?? this.semanticLabel,
       learnedLabel: learnedLabel ?? this.learnedLabel,
@@ -132,5 +186,17 @@ class TrackedEntity {
       isVisible: isVisible ?? this.isVisible,
       recoveredInFrame: recoveredInFrame ?? this.recoveredInFrame,
     );
+  }
+
+  static String _formatTrackLabel(String id) => 'T-${_idSuffix(id)}';
+
+  static String _formatPersistentLabel(String id) => 'P-${_idSuffix(id)}';
+
+  static String _idSuffix(String id) {
+    final match = RegExp(r'(\d+)$').firstMatch(id);
+    if (match == null) {
+      return id;
+    }
+    return int.parse(match.group(1)!).toString().padLeft(3, '0');
   }
 }

@@ -21,7 +21,8 @@ class MlKitSemanticLabeler extends SemanticLabeler {
   final int maxFreshLabelsPerFrame;
 
   ImageLabeler? _labeler;
-  final Map<String, _CachedSemanticLabel> _cache = <String, _CachedSemanticLabel>{};
+  final Map<String, _CachedSemanticLabel> _cache =
+      <String, _CachedSemanticLabel>{};
 
   @override
   String get labelerName => 'ML Kit Image Labeler';
@@ -66,9 +67,7 @@ class MlKitSemanticLabeler extends SemanticLabeler {
       final cached = _cache[track.stableLabel];
       if (!_shouldLabel(track, frameImage)) {
         updatedTracks.add(
-          cached == null
-              ? track
-              : track.copyWith(semanticLabel: cached.label),
+          cached == null ? track : track.copyWith(semanticLabel: cached.label),
         );
         continue;
       }
@@ -80,9 +79,7 @@ class MlKitSemanticLabeler extends SemanticLabeler {
 
       if (labelingBudget <= 0) {
         updatedTracks.add(
-          cached == null
-              ? track
-              : track.copyWith(semanticLabel: cached.label),
+          cached == null ? track : track.copyWith(semanticLabel: cached.label),
         );
         continue;
       }
@@ -104,9 +101,7 @@ class MlKitSemanticLabeler extends SemanticLabeler {
       );
       if (label == null) {
         updatedTracks.add(
-          cached == null
-              ? track
-              : track.copyWith(semanticLabel: cached.label),
+          cached == null ? track : track.copyWith(semanticLabel: cached.label),
         );
         continue;
       }
@@ -129,7 +124,8 @@ class MlKitSemanticLabeler extends SemanticLabeler {
     if (track.boundingBox.width < 18 || track.boundingBox.height < 18) {
       return false;
     }
-    return track.boundingBox.area >= frameImage.width * frameImage.height * 0.002;
+    return track.boundingBox.area >=
+        frameImage.width * frameImage.height * 0.002;
   }
 
   bool _canReuseCache(

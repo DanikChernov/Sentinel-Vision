@@ -13,6 +13,13 @@ class DetectorDiagnostics {
     this.outputShapes = const <List<int>>[],
     this.inputTensorType = 'unknown',
     this.outputTensorTypes = const <String>[],
+    this.labelMapLoaded = false,
+    this.labelMapName = 'unbound',
+    this.labelCount = 0,
+    this.rawClassIds = const <int>[],
+    this.mappedLabels = const <String>[],
+    this.unknownLabelCount = 0,
+    this.missingClassIds = const <int>[],
     this.preprocessSummary = 'Idle',
     this.parserMode = 'unbound',
     this.rawCandidateCount = 0,
@@ -47,6 +54,13 @@ class DetectorDiagnostics {
   final List<List<int>> outputShapes;
   final String inputTensorType;
   final List<String> outputTensorTypes;
+  final bool labelMapLoaded;
+  final String labelMapName;
+  final int labelCount;
+  final List<int> rawClassIds;
+  final List<String> mappedLabels;
+  final int unknownLabelCount;
+  final List<int> missingClassIds;
   final String preprocessSummary;
   final String parserMode;
   final int rawCandidateCount;
@@ -81,6 +95,13 @@ class DetectorDiagnostics {
     List<List<int>>? outputShapes,
     String? inputTensorType,
     List<String>? outputTensorTypes,
+    bool? labelMapLoaded,
+    String? labelMapName,
+    int? labelCount,
+    List<int>? rawClassIds,
+    List<String>? mappedLabels,
+    int? unknownLabelCount,
+    List<int>? missingClassIds,
     String? preprocessSummary,
     String? parserMode,
     int? rawCandidateCount,
@@ -116,6 +137,13 @@ class DetectorDiagnostics {
       outputShapes: outputShapes ?? this.outputShapes,
       inputTensorType: inputTensorType ?? this.inputTensorType,
       outputTensorTypes: outputTensorTypes ?? this.outputTensorTypes,
+      labelMapLoaded: labelMapLoaded ?? this.labelMapLoaded,
+      labelMapName: labelMapName ?? this.labelMapName,
+      labelCount: labelCount ?? this.labelCount,
+      rawClassIds: rawClassIds ?? this.rawClassIds,
+      mappedLabels: mappedLabels ?? this.mappedLabels,
+      unknownLabelCount: unknownLabelCount ?? this.unknownLabelCount,
+      missingClassIds: missingClassIds ?? this.missingClassIds,
       preprocessSummary: preprocessSummary ?? this.preprocessSummary,
       parserMode: parserMode ?? this.parserMode,
       rawCandidateCount: rawCandidateCount ?? this.rawCandidateCount,
@@ -127,14 +155,11 @@ class DetectorDiagnostics {
       skippedFrames: skippedFrames ?? this.skippedFrames,
       usingIsolateWorker: usingIsolateWorker ?? this.usingIsolateWorker,
       sampleOutputValues: sampleOutputValues ?? this.sampleOutputValues,
-      sourceAcquisitionMs:
-          sourceAcquisitionMs ?? this.sourceAcquisitionMs,
-      colorConversionMs:
-          colorConversionMs ?? this.colorConversionMs,
+      sourceAcquisitionMs: sourceAcquisitionMs ?? this.sourceAcquisitionMs,
+      colorConversionMs: colorConversionMs ?? this.colorConversionMs,
       rotationMs: rotationMs ?? this.rotationMs,
       resizeMs: resizeMs ?? this.resizeMs,
-      normalizationMs:
-          normalizationMs ?? this.normalizationMs,
+      normalizationMs: normalizationMs ?? this.normalizationMs,
       tensorCopyMs: tensorCopyMs ?? this.tensorCopyMs,
       inferenceMs: inferenceMs ?? this.inferenceMs,
       outputParsingMs: outputParsingMs ?? this.outputParsingMs,

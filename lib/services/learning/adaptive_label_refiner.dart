@@ -18,7 +18,11 @@ class AdaptiveLabelRefiner {
   Iterable<CorrectedLabelSummary> get mappings => _mappings.values;
 
   CorrectedLabelSummary? mappingFor(TrackedEntity entity, FrameContext frame) {
-    return _mappings[mappingKeyFor(entity.classLabel, entity.boundingBox, frame)];
+    return _mappings[mappingKeyFor(
+      entity.classLabel,
+      entity.boundingBox,
+      frame,
+    )];
   }
 
   String mappingKeyFor(
@@ -32,13 +36,19 @@ class AdaptiveLabelRefiner {
         (boundingBox.width * boundingBox.height) /
         (frame.sourceSize.width * frame.sourceSize.height);
     final center = boundingBox.center;
-    final zoneX = ((center.dx / frame.sourceSize.width) * 3).floor().clamp(0, 2);
-    final zoneY = ((center.dy / frame.sourceSize.height) * 3).floor().clamp(0, 2);
+    final zoneX = ((center.dx / frame.sourceSize.width) * 3).floor().clamp(
+      0,
+      2,
+    );
+    final zoneY = ((center.dy / frame.sourceSize.height) * 3).floor().clamp(
+      0,
+      2,
+    );
     final sizeBucket = sizeRatio < 0.03
         ? 'small'
         : sizeRatio < 0.12
-            ? 'medium'
-            : 'large';
+        ? 'medium'
+        : 'large';
     final aspectBucket = widthRatio > heightRatio ? 'wide' : 'tall';
     return '$classLabel|$sizeBucket|$aspectBucket|$zoneX$zoneY';
   }
@@ -61,16 +71,25 @@ class AdaptiveLabelRefiner {
 
     if (enableLabelCorrections && identitySummary?.preferredAlias != null) {
       learnedLabel = identitySummary!.preferredAlias;
-      learnedConfidence = math.max(learnedConfidence, identitySummary.learnedConfidence);
-      correctionCount = math.max(correctionCount, identitySummary.correctionCount);
+      learnedConfidence = math.max(
+        learnedConfidence,
+        identitySummary.learnedConfidence,
+      );
+      correctionCount = math.max(
+        correctionCount,
+        identitySummary.correctionCount,
+      );
       adaptiveConfidence = _blendConfidence(
         adaptiveConfidence,
         identitySummary.learnedConfidence,
       );
     }
 
-    final mapping = _mappings[mappingKeyFor(entity.classLabel, entity.boundingBox, frame)];
-    if (enableLabelCorrections && mapping != null && entity.classLabel != 'person') {
+    final mapping =
+        _mappings[mappingKeyFor(entity.classLabel, entity.boundingBox, frame)];
+    if (enableLabelCorrections &&
+        mapping != null &&
+        entity.classLabel != 'person') {
       learnedLabel = mapping.correctedLabel;
       learnedConfidence = math.max(
         learnedConfidence,
@@ -90,8 +109,9 @@ class AdaptiveLabelRefiner {
 
     return entity.copyWith(
       learnedLabel: learnedLabel,
-      learnedLabelConfidence:
-          learnedConfidence == 0.0 ? null : learnedConfidence.clamp(0.0, 0.99),
+      learnedLabelConfidence: learnedConfidence == 0.0
+          ? null
+          : learnedConfidence.clamp(0.0, 0.99),
       adaptiveConfidence: adaptiveConfidence.clamp(0.02, 0.99).toDouble(),
       correctionCount: correctionCount,
       falsePositiveCount: falsePositiveCount,

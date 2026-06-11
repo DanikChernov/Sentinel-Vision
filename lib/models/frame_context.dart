@@ -3,11 +3,7 @@ import 'dart:ui';
 
 import 'video_source.dart';
 
-enum FramePixelFormat {
-  yuv420,
-  bgra8888,
-  unsupported,
-}
+enum FramePixelFormat { yuv420, bgra8888, unsupported }
 
 enum FrameRotation {
   rotation0(0),
@@ -48,7 +44,8 @@ class FrameSnapshot {
   final FramePixelFormat pixelFormat;
   final List<FramePlaneData> planes;
 
-  bool get canCrop => planes.isNotEmpty && pixelFormat != FramePixelFormat.unsupported;
+  bool get canCrop =>
+      planes.isNotEmpty && pixelFormat != FramePixelFormat.unsupported;
   bool get isBgra => pixelFormat == FramePixelFormat.bgra8888;
 }
 

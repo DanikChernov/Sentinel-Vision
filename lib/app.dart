@@ -4,11 +4,17 @@ import 'package:flutter/material.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/event_log_screen.dart';
+import 'screens/identity_debug_screen.dart';
 import 'screens/learning_screen.dart';
 import 'screens/live_view_screen.dart';
+import 'screens/security/auth_gate_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/pipeline/vision_pipeline_controller.dart';
 import 'services/pipeline/vision_scope.dart';
+import 'services/security/app_lock_service.dart';
+import 'services/security/biometric_auth_service.dart';
+import 'services/security/security_scope.dart';
+import 'widgets/app_logo.dart';
 
 class SentinelVisionApp extends StatefulWidget {
   const SentinelVisionApp({super.key});
@@ -18,30 +24,37 @@ class SentinelVisionApp extends StatefulWidget {
 }
 
 class _SentinelVisionAppState extends State<SentinelVisionApp> {
-  late final VisionPipelineController _controller;
+  late final BiometricAuthService _authService;
+  late final AppLockService _appLockService;
 
   @override
   void initState() {
     super.initState();
-    _controller = VisionPipelineController();
-    unawaited(_controller.initialize());
+    _authService = BiometricAuthService();
+    _appLockService = AppLockService(authService: _authService);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _appLockService.dispose();
+    _authService.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return VisionScope(
-      controller: _controller,
+    return SecurityScope(
+      authService: _authService,
+      appLockService: _appLockService,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Sentinel Vision Mobile',
         theme: _buildTheme(),
-        home: const _AppShell(),
+        home: AuthGateScreen(
+          authService: _authService,
+          appLockService: _appLockService,
+          child: const _AuthenticatedVisionApp(),
+        ),
       ),
     );
   }
@@ -135,12 +148,39 @@ class _SentinelVisionAppState extends State<SentinelVisionApp> {
           color: Color(0xFFB6C9D8),
           height: 1.4,
         ),
-        bodySmall: TextStyle(
-          fontSize: 12,
-          color: Color(0xFF91A7B8),
-        ),
+        bodySmall: TextStyle(fontSize: 12, color: Color(0xFF91A7B8)),
       ),
     );
+  }
+}
+
+class _AuthenticatedVisionApp extends StatefulWidget {
+  const _AuthenticatedVisionApp();
+
+  @override
+  State<_AuthenticatedVisionApp> createState() =>
+      _AuthenticatedVisionAppState();
+}
+
+class _AuthenticatedVisionAppState extends State<_AuthenticatedVisionApp> {
+  late final VisionPipelineController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VisionPipelineController();
+    unawaited(_controller.initialize());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return VisionScope(controller: _controller, child: const _AppShell());
   }
 }
 
@@ -158,7 +198,15 @@ class _AppShellState extends State<_AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: _screenForIndex(_index),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 6),
+              child: SentinelLogoHeader(compact: true),
+            ),
+            Expanded(child: _screenForIndex(_index)),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -184,6 +232,11 @@ class _AppShellState extends State<_AppShell> {
             label: 'Learning',
           ),
           NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Identity',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.tune_outlined),
             selectedIcon: Icon(Icons.tune),
             label: 'Settings',
@@ -203,7 +256,8 @@ class _AppShellState extends State<_AppShell> {
       0 => const LiveViewScreen(),
       1 => const DashboardScreen(),
       2 => const LearningScreen(),
-      3 => const SettingsScreen(),
+      3 => const IdentityDebugScreen(),
+      4 => const SettingsScreen(),
       _ => const EventLogScreen(),
     };
   }

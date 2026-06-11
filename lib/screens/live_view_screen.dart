@@ -7,10 +7,11 @@ import '../models/pipeline_metrics.dart';
 import '../models/stage_timing_breakdown.dart';
 import '../models/tracked_entity.dart';
 import '../models/video_source.dart';
+import '../services/orchestrator/perception_result.dart';
 import '../services/pipeline/vision_pipeline_controller.dart';
 import '../services/pipeline/vision_scope.dart';
-import '../widgets/bounding_box_overlay.dart';
 import '../widgets/metric_tile.dart';
+import '../widgets/overlays/perception_overlay_painter.dart';
 import '../widgets/status_chip.dart';
 import '../widgets/tracked_entity_card.dart';
 
@@ -42,8 +43,6 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Sentinel Vision Mobile', style: theme.textTheme.headlineMedium),
-                const SizedBox(height: 8),
                 Text(
                   'Local-first live perception console for camera, identity persistence, and adaptive on-device learning.',
                   style: theme.textTheme.bodyMedium,
@@ -58,7 +57,8 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
                 const SizedBox(height: 16),
                 _ControlBar(
                   controller: controller,
-                  onSelectSource: () => _showSourceSelector(context, controller),
+                  onSelectSource: () =>
+                      _showSourceSelector(context, controller),
                 ),
                 AnimatedBuilder(
                   animation: controller,
@@ -73,10 +73,14 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.error.withValues(alpha: 0.12),
+                          color: theme.colorScheme.error.withValues(
+                            alpha: 0.12,
+                          ),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: theme.colorScheme.error.withValues(alpha: 0.4),
+                            color: theme.colorScheme.error.withValues(
+                              alpha: 0.4,
+                            ),
                           ),
                         ),
                         child: Text(
@@ -104,7 +108,8 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
                         ),
                         MetricTile(
                           label: 'Latency',
-                          value: '${metrics.frameLatencyMs.toStringAsFixed(1)} ms',
+                          value:
+                              '${metrics.frameLatencyMs.toStringAsFixed(1)} ms',
                           caption: 'full pipeline latency',
                         ),
                         MetricTile(
@@ -132,7 +137,10 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
                 const SizedBox(height: 18),
                 _InferenceDebugPanel(controller: controller),
                 const SizedBox(height: 18),
-                Text('Tap A Detection To Teach It', style: theme.textTheme.titleLarge),
+                Text(
+                  'Tap A Detection To Teach It',
+                  style: theme.textTheme.titleLarge,
+                ),
                 const SizedBox(height: 12),
                 ValueListenableBuilder<List<TrackedEntity>>(
                   valueListenable: controller.trackedEntitiesListenable,
@@ -229,26 +237,28 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
             padding: const EdgeInsets.all(12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: VisionSourceType.values.map((source) {
-                return ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  leading: Icon(_iconForSource(source)),
-                  title: Text(source.label),
-                  subtitle: Text(
-                    source == VisionSourceType.futureStream
-                        ? 'Reserved for future RTSP/WebRTC input'
-                        : source == VisionSourceType.videoFile
+              children: VisionSourceType.values
+                  .map((source) {
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      leading: Icon(_iconForSource(source)),
+                      title: Text(source.label),
+                      subtitle: Text(
+                        source == VisionSourceType.futureStream
+                            ? 'Reserved for future RTSP/WebRTC input'
+                            : source == VisionSourceType.videoFile
                             ? 'Run on extracted local video frames'
                             : 'Use the live device camera',
-                  ),
-                  onTap: () async {
-                    Navigator.of(context).pop();
-                    await controller.selectSource(source);
-                  },
-                );
-              }).toList(growable: false),
+                      ),
+                      onTap: () async {
+                        Navigator.of(context).pop();
+                        await controller.selectSource(source);
+                      },
+                    );
+                  })
+                  .toList(growable: false),
             ),
           ),
         );
@@ -266,9 +276,7 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
 }
 
 class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({
-    required this.controller,
-  });
+  const _StatusStrip({required this.controller});
 
   final VisionPipelineController controller;
 
@@ -338,10 +346,7 @@ class _StatusStrip extends StatelessWidget {
 }
 
 class _ControlBar extends StatelessWidget {
-  const _ControlBar({
-    required this.controller,
-    required this.onSelectSource,
-  });
+  const _ControlBar({required this.controller, required this.onSelectSource});
 
   final VisionPipelineController controller;
   final VoidCallback onSelectSource;
@@ -359,7 +364,9 @@ class _ControlBar extends StatelessWidget {
               runSpacing: 12,
               children: [
                 FilledButton.icon(
-                  onPressed: sourceState.isReady ? controller.toggleProcessing : null,
+                  onPressed: sourceState.isReady
+                      ? controller.toggleProcessing
+                      : null,
                   icon: Icon(
                     isProcessing ? Icons.stop_circle : Icons.play_circle_fill,
                   ),
@@ -392,9 +399,7 @@ class _ControlBar extends StatelessWidget {
 }
 
 class _PerformanceBreakdownPanel extends StatelessWidget {
-  const _PerformanceBreakdownPanel({
-    required this.controller,
-  });
+  const _PerformanceBreakdownPanel({required this.controller});
 
   final VisionPipelineController controller;
 
@@ -423,7 +428,8 @@ class _PerformanceBreakdownPanel extends StatelessWidget {
                 children: [
                   _DebugChip(
                     label: 'Acquire',
-                    value: '${timings.sourceAcquisitionMs.toStringAsFixed(1)} ms',
+                    value:
+                        '${timings.sourceAcquisitionMs.toStringAsFixed(1)} ms',
                   ),
                   _DebugChip(
                     label: 'Convert',
@@ -485,10 +491,7 @@ class _PerformanceBreakdownPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Text(
-                timings.pipelinePath,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(timings.pipelinePath, style: theme.textTheme.bodySmall),
             ],
           ),
         );
@@ -498,9 +501,7 @@ class _PerformanceBreakdownPanel extends StatelessWidget {
 }
 
 class _InferenceDebugPanel extends StatelessWidget {
-  const _InferenceDebugPanel({
-    required this.controller,
-  });
+  const _InferenceDebugPanel({required this.controller});
 
   final VisionPipelineController controller;
 
@@ -533,7 +534,10 @@ class _InferenceDebugPanel extends StatelessWidget {
                     label: 'Loaded',
                     value: diagnostics.modelLoaded ? 'Yes' : 'No',
                   ),
-                  _DebugChip(label: 'Delegate', value: diagnostics.delegateName),
+                  _DebugChip(
+                    label: 'Delegate',
+                    value: diagnostics.delegateName,
+                  ),
                   _DebugChip(
                     label: 'Threads',
                     value: '${diagnostics.threadCount}',
@@ -569,7 +573,32 @@ class _InferenceDebugPanel extends StatelessWidget {
                               .join(' | '),
                   ),
                   _DebugChip(label: 'Parser', value: diagnostics.parserMode),
-                  _DebugChip(label: 'Raw', value: '${diagnostics.rawCandidateCount}'),
+                  _DebugChip(
+                    label: 'Labels',
+                    value: diagnostics.labelMapLoaded
+                        ? '${diagnostics.labelCount} from ${diagnostics.labelMapName}'
+                        : 'not loaded',
+                  ),
+                  _DebugChip(
+                    label: 'Class IDs',
+                    value: diagnostics.rawClassIds.isEmpty
+                        ? '-'
+                        : diagnostics.rawClassIds.join(','),
+                  ),
+                  _DebugChip(
+                    label: 'Mapped',
+                    value: diagnostics.mappedLabels.isEmpty
+                        ? '-'
+                        : diagnostics.mappedLabels.join(', '),
+                  ),
+                  _DebugChip(
+                    label: 'Unknown',
+                    value: '${diagnostics.unknownLabelCount}',
+                  ),
+                  _DebugChip(
+                    label: 'Raw',
+                    value: '${diagnostics.rawCandidateCount}',
+                  ),
                   _DebugChip(
                     label: 'Filtered',
                     value: '${diagnostics.filteredCandidateCount}',
@@ -579,7 +608,10 @@ class _InferenceDebugPanel extends StatelessWidget {
                     value:
                         '${diagnostics.trackerInputCount} -> ${diagnostics.trackerOutputCount}',
                   ),
-                  _DebugChip(label: 'Queue', value: '${diagnostics.queueDepth}'),
+                  _DebugChip(
+                    label: 'Queue',
+                    value: '${diagnostics.queueDepth}',
+                  ),
                   _DebugChip(
                     label: 'Skipped',
                     value: '${diagnostics.skippedFrames}',
@@ -625,9 +657,7 @@ class _InferenceDebugPanel extends StatelessWidget {
 }
 
 class _PreviewCard extends StatelessWidget {
-  const _PreviewCard({
-    required this.controller,
-  });
+  const _PreviewCard({required this.controller});
 
   final VisionPipelineController controller;
 
@@ -642,7 +672,7 @@ class _PreviewCard extends StatelessWidget {
           builder: (context, sourceSize, _) {
             final cameraController = controller.cameraController;
             final videoController = controller.videoController;
-            Widget preview = _PreviewPlaceholder(
+            Widget preview = _PreviewIdleState(
               title: sourceState.label,
               subtitle: sourceState.isReady
                   ? 'Ready for on-device processing'
@@ -665,10 +695,7 @@ class _PreviewCard extends StatelessWidget {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF112234),
-                    Color(0xFF09131E),
-                  ],
+                  colors: [Color(0xFF112234), Color(0xFF09131E)],
                 ),
                 border: Border.all(color: theme.colorScheme.outline),
               ),
@@ -701,12 +728,13 @@ class _PreviewCard extends StatelessWidget {
                     else
                       preview,
                     Positioned.fill(
-                      child: ValueListenableBuilder<List<TrackedEntity>>(
-                        valueListenable: controller.trackedEntitiesListenable,
-                        builder: (context, entities, _) {
-                          return BoundingBoxOverlay(
-                            entities: entities,
+                      child: ValueListenableBuilder<PerceptionResult?>(
+                        valueListenable: controller.perceptionResultListenable,
+                        builder: (context, result, _) {
+                          return PerceptionOverlay(
+                            result: result,
                             sourceSize: sourceSize,
+                            settings: controller.settings,
                             onPainted: controller.recordOverlayRepaint,
                           );
                         },
@@ -747,10 +775,7 @@ class _PreviewCard extends StatelessWidget {
 }
 
 class _DebugChip extends StatelessWidget {
-  const _DebugChip({
-    required this.label,
-    required this.value,
-  });
+  const _DebugChip({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -766,18 +791,16 @@ class _DebugChip extends StatelessWidget {
       child: Text(
         '$label: $value',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white70,
-              fontWeight: FontWeight.w700,
-            ),
+          color: Colors.white70,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
 }
 
 class _LearningHint extends StatelessWidget {
-  const _LearningHint({
-    required this.theme,
-  });
+  const _LearningHint({required this.theme});
 
   final ThemeData theme;
 
@@ -800,10 +823,7 @@ class _LearningHint extends StatelessWidget {
 }
 
 class _OverlayBadge extends StatelessWidget {
-  const _OverlayBadge({
-    required this.label,
-    required this.icon,
-  });
+  const _OverlayBadge({required this.label, required this.icon});
 
   final String label;
   final IconData icon;
@@ -836,11 +856,8 @@ class _OverlayBadge extends StatelessWidget {
   }
 }
 
-class _PreviewPlaceholder extends StatelessWidget {
-  const _PreviewPlaceholder({
-    required this.title,
-    required this.subtitle,
-  });
+class _PreviewIdleState extends StatelessWidget {
+  const _PreviewIdleState({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;

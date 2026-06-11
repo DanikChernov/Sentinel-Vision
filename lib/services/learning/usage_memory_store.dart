@@ -11,9 +11,7 @@ import '../../models/learning_models.dart';
 import '../../models/video_source.dart';
 
 class UsageMemoryStore {
-  UsageMemoryStore({
-    this.storageRootPath,
-  });
+  UsageMemoryStore({this.storageRootPath});
 
   final String? storageRootPath;
 
@@ -126,47 +124,41 @@ class UsageMemoryStore {
 
   Future<void> upsertIdentityPattern(LearnedIdentitySummary summary) async {
     final db = await _db;
-    await db.insert(
-      'identity_patterns',
-      <String, Object?>{
-        'stable_label': summary.stableLabel,
-        'class_label': summary.classLabel,
-        'preferred_alias': summary.preferredAlias,
-        'sightings': summary.sightings,
-        'recoveries': summary.recoveries,
-        'correction_count': summary.correctionCount,
-        'average_detector_confidence': summary.averageDetectorConfidence,
-        'learned_confidence': summary.learnedConfidence,
-        'average_width': summary.averageWidth,
-        'average_height': summary.averageHeight,
-        'average_center_x': summary.averageCenterX,
-        'average_center_y': summary.averageCenterY,
-        'average_motion': summary.averageMotion,
-        'last_seen_at': summary.lastSeenAt.toIso8601String(),
-        'last_source_type': summary.lastSourceType.name,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('identity_patterns', <String, Object?>{
+      'stable_label': summary.stableLabel,
+      'class_label': summary.classLabel,
+      'preferred_alias': summary.preferredAlias,
+      'sightings': summary.sightings,
+      'recoveries': summary.recoveries,
+      'correction_count': summary.correctionCount,
+      'average_detector_confidence': summary.averageDetectorConfidence,
+      'learned_confidence': summary.learnedConfidence,
+      'average_width': summary.averageWidth,
+      'average_height': summary.averageHeight,
+      'average_center_x': summary.averageCenterX,
+      'average_center_y': summary.averageCenterY,
+      'average_motion': summary.averageMotion,
+      'last_seen_at': summary.lastSeenAt.toIso8601String(),
+      'last_source_type': summary.lastSourceType.name,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> upsertLabelMapping(CorrectedLabelSummary summary) async {
     final db = await _db;
-    await db.insert(
-      'label_mappings',
-      <String, Object?>{
-        'mapping_key': summary.key,
-        'original_label': summary.originalLabel,
-        'corrected_label': summary.correctedLabel,
-        'usage_count': summary.usageCount,
-        'false_positive_count': summary.falsePositiveCount,
-        'average_learning_confidence': summary.averageLearningConfidence,
-        'last_updated_at': summary.lastUpdatedAt.toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('label_mappings', <String, Object?>{
+      'mapping_key': summary.key,
+      'original_label': summary.originalLabel,
+      'corrected_label': summary.correctedLabel,
+      'usage_count': summary.usageCount,
+      'false_positive_count': summary.falsePositiveCount,
+      'average_learning_confidence': summary.averageLearningConfidence,
+      'last_updated_at': summary.lastUpdatedAt.toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<TrainingSampleRecord> saveTrainingSample(TrainingSampleRecord sample) async {
+  Future<TrainingSampleRecord> saveTrainingSample(
+    TrainingSampleRecord sample,
+  ) async {
     final db = await _db;
     final id = await db.insert('training_samples', <String, Object?>{
       'crop_path': sample.cropPath,
@@ -228,9 +220,7 @@ class UsageMemoryStore {
     }
   }
 
-  Future<LearningSnapshot> loadSnapshot({
-    int sampleLimit = 24,
-  }) async {
+  Future<LearningSnapshot> loadSnapshot({int sampleLimit = 24}) async {
     final db = await _db;
     final identityRows = await db.query(
       'identity_patterns',
@@ -250,18 +240,20 @@ class UsageMemoryStore {
     final trainingSampleCount = await _countTableRows(db, 'training_samples');
     final storageBytes = await approximateStorageBytes();
 
-    final identities = identityRows.map(_identityFromRow).toList(growable: false);
+    final identities = identityRows
+        .map(_identityFromRow)
+        .toList(growable: false);
     final mappings = mappingRows.map(_mappingFromRow).toList(growable: false);
     final samples = await loadTrainingSamples(limit: sampleLimit);
     final averageConfidenceGain = identities.isEmpty
         ? 0.0
         : identities
-                .map((identity) {
-                  return identity.learnedConfidence -
-                      identity.averageDetectorConfidence;
-                })
-                .reduce((a, b) => a + b) /
-            identities.length;
+                  .map((identity) {
+                    return identity.learnedConfidence -
+                        identity.averageDetectorConfidence;
+                  })
+                  .reduce((a, b) => a + b) /
+              identities.length;
 
     return LearningSnapshot(
       metrics: LearningMetrics(
@@ -328,7 +320,9 @@ class UsageMemoryStore {
 
   Future<String> _resolveDefaultRootPath() async {
     if (kIsWeb) {
-      throw UnsupportedError('Sentinel Learning Core is not configured for web.');
+      throw UnsupportedError(
+        'Sentinel Learning Core is not configured for web.',
+      );
     }
     final supportDirectory = await getApplicationSupportDirectory();
     return supportDirectory.path;
@@ -472,17 +466,18 @@ class UsageMemoryStore {
       correctionCount: (row['correction_count'] as num?)?.toInt() ?? 0,
       averageDetectorConfidence:
           (row['average_detector_confidence'] as num?)?.toDouble() ?? 0,
-      learnedConfidence:
-          (row['learned_confidence'] as num?)?.toDouble() ?? 0,
+      learnedConfidence: (row['learned_confidence'] as num?)?.toDouble() ?? 0,
       averageWidth: (row['average_width'] as num?)?.toDouble() ?? 0,
       averageHeight: (row['average_height'] as num?)?.toDouble() ?? 0,
       averageCenterX: (row['average_center_x'] as num?)?.toDouble() ?? 0,
       averageCenterY: (row['average_center_y'] as num?)?.toDouble() ?? 0,
       averageMotion: (row['average_motion'] as num?)?.toDouble() ?? 0,
-      lastSeenAt: DateTime.tryParse(row['last_seen_at'] as String? ?? '') ??
+      lastSeenAt:
+          DateTime.tryParse(row['last_seen_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      lastSourceType:
-          _sourceTypeFromName(row['last_source_type'] as String? ?? 'camera'),
+      lastSourceType: _sourceTypeFromName(
+        row['last_source_type'] as String? ?? 'camera',
+      ),
     );
   }
 
@@ -497,7 +492,7 @@ class UsageMemoryStore {
           (row['average_learning_confidence'] as num?)?.toDouble() ?? 0,
       lastUpdatedAt:
           DateTime.tryParse(row['last_updated_at'] as String? ?? '') ??
-              DateTime.fromMillisecondsSinceEpoch(0),
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 
@@ -509,7 +504,8 @@ class UsageMemoryStore {
       correctedLabel: row['corrected_label'] as String?,
       stableLabel: row['stable_label'] as String? ?? 'unknown',
       confidence: (row['confidence'] as num?)?.toDouble() ?? 0,
-      timestamp: DateTime.tryParse(row['captured_at'] as String? ?? '') ??
+      timestamp:
+          DateTime.tryParse(row['captured_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       boundingBox: BoundingBox(
         left: (row['bbox_left'] as num?)?.toDouble() ?? 0,
@@ -517,10 +513,11 @@ class UsageMemoryStore {
         width: (row['bbox_width'] as num?)?.toDouble() ?? 0,
         height: (row['bbox_height'] as num?)?.toDouble() ?? 0,
       ),
-      sourceType: _sourceTypeFromName(row['source_type'] as String? ?? 'camera'),
+      sourceType: _sourceTypeFromName(
+        row['source_type'] as String? ?? 'camera',
+      ),
       exported: ((row['exported'] as num?)?.toInt() ?? 0) == 1,
-      feedbackApplied:
-          ((row['feedback_applied'] as num?)?.toInt() ?? 0) == 1,
+      feedbackApplied: ((row['feedback_applied'] as num?)?.toInt() ?? 0) == 1,
     );
   }
 
@@ -562,7 +559,10 @@ class UsageMemoryStore {
     }
 
     var total = 0;
-    await for (final entity in directory.list(recursive: true, followLinks: false)) {
+    await for (final entity in directory.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (entity is File) {
         try {
           total += await entity.length();

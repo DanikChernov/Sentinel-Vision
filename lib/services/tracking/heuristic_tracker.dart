@@ -16,7 +16,10 @@ class HeuristicTracker implements Tracker {
   int _nextTrackId = 1;
 
   @override
-  List<TrackedEntity> update(List<DetectionResult> detections, FrameContext frame) {
+  List<TrackedEntity> update(
+    List<DetectionResult> detections,
+    FrameContext frame,
+  ) {
     final detectionPool = <int, DetectionResult>{
       for (var i = 0; i < detections.length; i += 1) i: detections[i],
     };
@@ -32,13 +35,16 @@ class HeuristicTracker implements Tracker {
           continue;
         }
 
-        final iou = track.boundingBox.intersectionOverUnion(detection.boundingBox);
+        final iou = track.boundingBox.intersectionOverUnion(
+          detection.boundingBox,
+        );
         final distance = track.boundingBox.normalizedCenterDistance(
           detection.boundingBox,
           frame.sourceSize,
         );
         final sizeDelta = track.boundingBox.sizeDelta(detection.boundingBox);
-        final score = (iou * 0.6) +
+        final score =
+            (iou * 0.6) +
             ((1 - distance.clamp(0.0, 1.0).toDouble()) * 0.3) +
             ((1 - sizeDelta.clamp(0.0, 1.0).toDouble()) * 0.1);
 
@@ -51,6 +57,10 @@ class HeuristicTracker implements Tracker {
       if (bestIndex != null && bestScore >= minimumAssociationScore) {
         final match = detectionPool.remove(bestIndex)!;
         updatedTracks[track.trackId] = track.copyWith(
+          detectionId: match.detectionId,
+          classId: match.classId,
+          classLabel: match.classLabel,
+          sourceModel: match.sourceModel,
           boundingBox: match.boundingBox,
           confidence: match.confidence,
           detectorConfidence: match.confidence,
@@ -77,7 +87,10 @@ class HeuristicTracker implements Tracker {
       updatedTracks[trackId] = TrackedEntity(
         trackId: trackId,
         stableLabel: trackId,
+        detectionId: detection.detectionId,
+        classId: detection.classId,
         classLabel: detection.classLabel,
+        sourceModel: detection.sourceModel,
         boundingBox: detection.boundingBox,
         confidence: detection.confidence,
         detectorConfidence: detection.confidence,

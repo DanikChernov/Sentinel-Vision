@@ -8,6 +8,7 @@ import '../../models/frame_context.dart';
 import '../../models/learning_models.dart';
 import '../../models/tracked_entity.dart';
 import '../camera/frame_image_utils.dart';
+import '../orchestrator/perception_result.dart';
 import 'usage_memory_store.dart';
 
 class TrainingSampleExporter {
@@ -52,6 +53,7 @@ class TrainingSampleExporter {
   Future<String> exportDataset({
     required UsageMemoryStore store,
     required List<TrainingSampleRecord> samples,
+    PerceptionResult? perceptionResult,
   }) async {
     final exportRoot = await store.exportDirectory;
     final exportPath = p.join(
@@ -87,6 +89,7 @@ class TrainingSampleExporter {
         'source_type': sample.sourceType.name,
         'bounding_box': sample.boundingBox.toJson(),
         'feedback_applied': sample.feedbackApplied,
+        'identity_id': sample.stableLabel,
       });
 
       if (sample.id != null) {
@@ -98,11 +101,110 @@ class TrainingSampleExporter {
     const encoder = JsonEncoder.withIndent('  ');
     await manifestFile.writeAsString(encoder.convert(manifest), flush: true);
 
+    if (perceptionResult != null) {
+      final metadataFile = File(
+        p.join(exportDir.path, 'perception_metadata.json'),
+      );
+      await metadataFile.writeAsString(
+        encoder.convert(_perceptionMetadata(perceptionResult)),
+        flush: true,
+      );
+    }
+
     if (exportedIds.isNotEmpty) {
       await store.markTrainingSamplesExported(exportedIds);
     }
 
     return exportDir.path;
+  }
+
+  Map<String, Object?> _perceptionMetadata(PerceptionResult result) {
+    return <String, Object?>{
+      'frame_id': result.frameId,
+      'timestamp': result.timestamp.toIso8601String(),
+      'detections': result.detections
+          .map((detection) {
+            return <String, Object?>{
+              'id': detection.id,
+              'label': detection.classLabel,
+              'confidence': detection.confidence,
+              'bounding_box': detection.boundingBox.toJson(),
+            };
+          })
+          .toList(growable: false),
+      'segmentations': result.segmentations
+          .map((segmentation) {
+            return <String, Object?>{
+              'id': segmentation.segmentationId,
+              'label': segmentation.classLabel,
+              'confidence': segmentation.confidence,
+              'bounding_box': segmentation.boundingBox.toJson(),
+              'mask_area': segmentation.maskArea,
+              'polygon': segmentation.polygonPoints
+                  .map(
+                    (point) => <String, double>{'x': point.dx, 'y': point.dy},
+                  )
+                  .toList(growable: false),
+              'track_id': segmentation.associatedTrackId,
+              'refined': segmentation.refined,
+            };
+          })
+          .toList(growable: false),
+      'identities': result.identities
+          .map((identity) {
+            return <String, Object?>{
+              'track_id': identity.trackId,
+              'persistent_entity_id': identity.persistentEntityId,
+              'display_label': identity.displayLabel,
+              'confidence': identity.confidence,
+              'reason_breakdown': identity.reasonBreakdown,
+            };
+          })
+          .toList(growable: false),
+      'poses': result.poses
+          .map((pose) {
+            return <String, Object?>{
+              'id': pose.poseId,
+              'track_id': pose.associatedTrackId,
+              'confidence': pose.confidence,
+              'keypoints': pose.keypoints
+                  .map((keypoint) {
+                    return <String, Object?>{
+                      'label': keypoint.label,
+                      'x': keypoint.position.dx,
+                      'y': keypoint.position.dy,
+                      'confidence': keypoint.confidence,
+                    };
+                  })
+                  .toList(growable: false),
+            };
+          })
+          .toList(growable: false),
+      'depth': result.depth == null
+          ? null
+          : <String, Object?>{
+              'map_width': result.depth!.mapSize.width,
+              'map_height': result.depth!.mapSize.height,
+              'entity_depths': result.depth!.entityDepths
+                  .map((depth) {
+                    return <String, Object?>{
+                      'track_id': depth.trackId,
+                      'relative_depth': depth.relativeDepth,
+                      'confidence': depth.confidence,
+                    };
+                  })
+                  .toList(growable: false),
+            },
+      'scene_context': result.sceneContext == null
+          ? null
+          : <String, Object?>{
+              'labels': result.sceneContext!.labels,
+              'confidence': result.sceneContext!.contextConfidence,
+              'risk_hints': result.sceneContext!.riskHints,
+              'interaction_hints': result.sceneContext!.interactionHints,
+              'summary': result.sceneContext!.summary,
+            },
+    };
   }
 
   String _sanitizeForFileName(String input) {

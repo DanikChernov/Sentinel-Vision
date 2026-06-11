@@ -11,9 +11,7 @@ import '../../models/bounding_box.dart';
 import '../../models/persistence_models.dart';
 
 class EmbeddingMemoryStore {
-  EmbeddingMemoryStore({
-    this.storageRootPath,
-  });
+  EmbeddingMemoryStore({this.storageRootPath});
 
   final String? storageRootPath;
 
@@ -49,28 +47,24 @@ class EmbeddingMemoryStore {
 
   Future<void> upsertRecord(FaceEmbeddingRecord record) async {
     final db = await _db;
-    await db.insert(
-      'embedding_profiles',
-      <String, Object?>{
-        'stable_label': record.stableLabel,
-        'class_label': record.classLabel,
-        'embedding_json': jsonEncode(record.embedding),
-        'embedding_count': record.embeddingCount,
-        'sightings': record.sightings,
-        'recoveries': record.recoveries,
-        'correction_count': record.correctionCount,
-        'average_similarity': record.averageSimilarity,
-        'average_temporal_confidence': record.averageTemporalConfidence,
-        'average_face_confidence': record.averageFaceConfidence,
-        'bbox_left': record.lastBoundingBox.left,
-        'bbox_top': record.lastBoundingBox.top,
-        'bbox_width': record.lastBoundingBox.width,
-        'bbox_height': record.lastBoundingBox.height,
-        'last_seen_at': record.lastSeenAt.toIso8601String(),
-        'preferred_alias': record.preferredAlias,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('embedding_profiles', <String, Object?>{
+      'stable_label': record.stableLabel,
+      'class_label': record.classLabel,
+      'embedding_json': jsonEncode(record.embedding),
+      'embedding_count': record.embeddingCount,
+      'sightings': record.sightings,
+      'recoveries': record.recoveries,
+      'correction_count': record.correctionCount,
+      'average_similarity': record.averageSimilarity,
+      'average_temporal_confidence': record.averageTemporalConfidence,
+      'average_face_confidence': record.averageFaceConfidence,
+      'bbox_left': record.lastBoundingBox.left,
+      'bbox_top': record.lastBoundingBox.top,
+      'bbox_width': record.lastBoundingBox.width,
+      'bbox_height': record.lastBoundingBox.height,
+      'last_seen_at': record.lastSeenAt.toIso8601String(),
+      'preferred_alias': record.preferredAlias,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateCorrection({
@@ -133,10 +127,7 @@ class EmbeddingMemoryStore {
       sqfliteFfiInit();
       return databaseFactoryFfi.openDatabase(
         path,
-        options: OpenDatabaseOptions(
-          version: 1,
-          onCreate: _createDatabase,
-        ),
+        options: OpenDatabaseOptions(version: 1, onCreate: _createDatabase),
       );
     }
 
@@ -196,7 +187,8 @@ class EmbeddingMemoryStore {
         width: (row['bbox_width'] as num?)?.toDouble() ?? 0,
         height: (row['bbox_height'] as num?)?.toDouble() ?? 0,
       ),
-      lastSeenAt: DateTime.tryParse(row['last_seen_at'] as String? ?? '') ??
+      lastSeenAt:
+          DateTime.tryParse(row['last_seen_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       preferredAlias: row['preferred_alias'] as String?,
     );

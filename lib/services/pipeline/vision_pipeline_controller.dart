@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:camera/camera.dart';
@@ -27,6 +26,10 @@ import '../identity/identity_registry.dart';
 import '../labeling/mlkit_semantic_labeler.dart';
 import '../labeling/semantic_labeler.dart';
 import '../learning/learning_core.dart';
+import '../models/detection/yolo26_detection_adapter.dart';
+import '../models/tracking/heuristic_tracker_adapter.dart';
+import '../orchestrator/perception_orchestrator.dart';
+import '../orchestrator/perception_result.dart';
 import '../persistence/persistence_processor.dart';
 import '../tracking/heuristic_tracker.dart';
 import '../tracking/tracker.dart';
@@ -40,13 +43,21 @@ class VisionPipelineController extends ChangeNotifier {
     SemanticLabeler? semanticLabeler,
     SentinelLearningCore? learningCore,
     PersistenceProcessor? persistenceProcessor,
-  })  : _mediaSourceService = mediaSourceService ?? MediaSourceService(),
-        _detector = detector ?? LiteRtObjectDetector(),
-        _tracker = tracker ?? HeuristicTracker(),
-        _identityRegistry = identityRegistry ?? HeuristicIdentityRegistry(),
-        _semanticLabeler = semanticLabeler ?? MlKitSemanticLabeler(),
-        _learningCore = learningCore ?? SentinelLearningCore(),
-        _persistenceProcessor = persistenceProcessor ?? PersistenceProcessor();
+    PerceptionOrchestrator? perceptionOrchestrator,
+  }) : _mediaSourceService = mediaSourceService ?? MediaSourceService(),
+       _detector = detector ?? LiteRtObjectDetector(),
+       _tracker = tracker ?? HeuristicTracker(),
+       _identityRegistry = identityRegistry ?? HeuristicIdentityRegistry(),
+       _semanticLabeler = semanticLabeler ?? MlKitSemanticLabeler(),
+       _learningCore = learningCore ?? SentinelLearningCore(),
+       _persistenceProcessor = persistenceProcessor ?? PersistenceProcessor() {
+    _perceptionOrchestrator =
+        perceptionOrchestrator ??
+        PerceptionOrchestrator(
+          detectionAdapter: Yolo26DetectionAdapter(detector: _detector),
+          trackerAdapter: HeuristicTrackerAdapter(tracker: _tracker),
+        );
+  }
 
   final MediaSourceService _mediaSourceService;
   final Detector _detector;
@@ -55,6 +66,7 @@ class VisionPipelineController extends ChangeNotifier {
   final SemanticLabeler _semanticLabeler;
   final SentinelLearningCore _learningCore;
   final PersistenceProcessor _persistenceProcessor;
+  late final PerceptionOrchestrator _perceptionOrchestrator;
   final ValueNotifier<List<TrackedEntity>> _trackedEntitiesNotifier =
       ValueNotifier<List<TrackedEntity>>(const <TrackedEntity>[]);
   final ValueNotifier<PipelineMetrics> _metricsNotifier =
@@ -74,8 +86,9 @@ class VisionPipelineController extends ChangeNotifier {
         ),
       );
   final ValueNotifier<Size?> _sourceSizeNotifier = ValueNotifier<Size?>(null);
-  final ValueNotifier<bool> _processingNotifier =
-      ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _processingNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<PerceptionResult?> _perceptionResultNotifier =
+      ValueNotifier<PerceptionResult?>(null);
 
   AppSettings _settings = const AppSettings();
   LearningSnapshot _learningSnapshot = const LearningSnapshot();
@@ -94,6 +107,7 @@ class VisionPipelineController extends ChangeNotifier {
   final ListQueue<FrameContext> _frameQueue = ListQueue<FrameContext>();
   List<TrackedEntity> _trackedEntities = const <TrackedEntity>[];
   List<DetectionResult> _recentDetections = const <DetectionResult>[];
+  PerceptionResult? _lastPerceptionResult;
   StageTimingBreakdown _stageTimingBreakdown = const StageTimingBreakdown();
   bool _isInitializing = false;
   bool _isProcessing = false;
@@ -116,8 +130,10 @@ class VisionPipelineController extends ChangeNotifier {
   DetectorDiagnostics get inferenceDiagnostics => _inferenceDiagnostics;
   VideoSourceState get sourceState => _sourceState;
   List<PipelineEvent> get eventLog => List.unmodifiable(_eventLog.reversed);
-  List<TrackedEntity> get trackedEntities => List.unmodifiable(_trackedEntities);
-  List<DetectionResult> get recentDetections => List.unmodifiable(_recentDetections);
+  List<TrackedEntity> get trackedEntities =>
+      List.unmodifiable(_trackedEntities);
+  List<DetectionResult> get recentDetections =>
+      List.unmodifiable(_recentDetections);
   ValueListenable<List<TrackedEntity>> get trackedEntitiesListenable =>
       _trackedEntitiesNotifier;
   ValueListenable<PipelineMetrics> get metricsListenable => _metricsNotifier;
@@ -129,20 +145,51 @@ class VisionPipelineController extends ChangeNotifier {
       _sourceStateNotifier;
   ValueListenable<Size?> get sourceSizeListenable => _sourceSizeNotifier;
   ValueListenable<bool> get processingListenable => _processingNotifier;
+  ValueListenable<PerceptionResult?> get perceptionResultListenable =>
+      _perceptionResultNotifier;
   bool get isInitializing => _isInitializing;
   bool get isProcessing => _isProcessing;
   String get pipelineStatus => _pipelineStatus;
   String? get errorMessage => _errorMessage;
   int get identityMemoryCount => _identityRegistry.knownIdentityCount;
+  IdentityRegistryDiagnostics get identityDiagnostics =>
+      _identityRegistry.diagnostics;
   int get learningMemoryCount => _learningSnapshot.identities.length;
   DetectorTestResult? get lastDetectorTestResult => _lastDetectorTestResult;
   StageTimingBreakdown get stageTimingBreakdown => _stageTimingBreakdown;
+  PerceptionResult? get perceptionResult => _lastPerceptionResult;
   String get detectorLabel => _detector.backendLabel;
   String get labelerLabel => _semanticLabeler.labelerName;
-  CameraController? get cameraController => _mediaSourceService.cameraController;
-  VideoPlayerController? get videoController => _mediaSourceService.videoController;
+  CameraController? get cameraController =>
+      _mediaSourceService.cameraController;
+  VideoPlayerController? get videoController =>
+      _mediaSourceService.videoController;
   double get previewAspectRatio => _mediaSourceService.previewAspectRatio;
   Size? get sourceSize => _mediaSourceService.sourceSize;
+  List<ModelBackend> get availableBackends => const <ModelBackend>[
+    ModelBackend.tflite,
+  ];
+  List<InferenceAcceleration> get availableAccelerations =>
+      const <InferenceAcceleration>[
+        InferenceAcceleration.auto,
+        InferenceAcceleration.cpu,
+        InferenceAcceleration.xnnpack,
+      ];
+  List<int> get supportedModelInputSizes {
+    final shape = _inferenceDiagnostics.inputShape;
+    if (shape.length == 4 && shape[1] > 0 && shape[1] == shape[2]) {
+      return <int>[shape[1]];
+    }
+    return const <int>[320];
+  }
+
+  bool isBackendAvailable(ModelBackend backend) {
+    return availableBackends.contains(backend);
+  }
+
+  bool isAccelerationAvailable(InferenceAcceleration acceleration) {
+    return availableAccelerations.contains(acceleration);
+  }
 
   Future<void> initialize() async {
     if (_isInitializing) {
@@ -163,6 +210,7 @@ class VisionPipelineController extends ChangeNotifier {
       _persistenceSnapshot = _persistenceProcessor.snapshot;
       await _detector.initialize();
       await _detector.applySettings(_settings);
+      await _perceptionOrchestrator.initialize(_settings);
       _inferenceDiagnostics = _detector.diagnostics;
       _publishDiagnostics();
       await _semanticLabeler.initialize();
@@ -309,15 +357,14 @@ class VisionPipelineController extends ChangeNotifier {
   void updateSettings(AppSettings settings) {
     final previousSettings = _settings;
     final previousBackend = _settings.backend;
-    var nextSettings = settings;
+    final validation = _validatedSettings(settings, previousSettings);
+    final nextSettings = validation.settings;
 
-    if (settings.backend != ModelBackend.tflite) {
-      nextSettings = settings.copyWith(backend: ModelBackend.tflite);
+    for (final message in validation.messages) {
       _appendEvent(
         PipelineEvent(
           type: PipelineEventType.pipelineState,
-          message:
-              '${settings.backend.label} is not wired yet. The pipeline remains on $detectorLabel.',
+          message: message,
           timestamp: DateTime.now(),
         ),
       );
@@ -328,6 +375,7 @@ class VisionPipelineController extends ChangeNotifier {
 
     if (!_settings.trackingEnabled) {
       _tracker.reset();
+      _perceptionOrchestrator.resetTracking();
       _trackedEntities = const <TrackedEntity>[];
       _publishTrackedEntities();
     }
@@ -340,7 +388,8 @@ class VisionPipelineController extends ChangeNotifier {
       _appendEvent(
         PipelineEvent(
           type: PipelineEventType.pipelineState,
-          message: 'Face analysis persistence disabled. Embedding memory is retained locally.',
+          message:
+              'Face analysis persistence disabled. Embedding memory is retained locally.',
           timestamp: DateTime.now(),
         ),
       );
@@ -359,18 +408,55 @@ class VisionPipelineController extends ChangeNotifier {
     notifyListeners();
   }
 
+  _SettingsValidation _validatedSettings(
+    AppSettings requested,
+    AppSettings previous,
+  ) {
+    var next = requested;
+    final messages = <String>[];
+
+    if (!isBackendAvailable(requested.backend)) {
+      next = next.copyWith(backend: previous.backend);
+      messages.add(
+        '${requested.backend.label} is not implemented. Keeping ${previous.backend.label}.',
+      );
+    }
+
+    if (!isAccelerationAvailable(requested.acceleration)) {
+      final fallback = isAccelerationAvailable(previous.acceleration)
+          ? previous.acceleration
+          : InferenceAcceleration.auto;
+      next = next.copyWith(acceleration: fallback);
+      messages.add(
+        '${requested.acceleration.label} acceleration is unavailable on this build. Keeping ${fallback.label}.',
+      );
+    }
+
+    final supportedSizes = supportedModelInputSizes;
+    if (!supportedSizes.contains(requested.modelInputSize)) {
+      final fallback = supportedSizes.contains(previous.modelInputSize)
+          ? previous.modelInputSize
+          : supportedSizes.first;
+      next = next.copyWith(modelInputSize: fallback);
+      messages.add(
+        'Model input ${requested.modelInputSize} is unsupported by the active model. Keeping ${fallback}x$fallback.',
+      );
+    }
+
+    return _SettingsValidation(settings: next, messages: messages);
+  }
+
   Future<void> _applyRuntimeSettings(
     AppSettings previousSettings,
     AppSettings nextSettings,
   ) async {
     final detectorConfigChanged =
         previousSettings.acceleration != nextSettings.acceleration ||
-            previousSettings.modelInputSize != nextSettings.modelInputSize ||
-            previousSettings.tfliteThreadCount !=
-                nextSettings.tfliteThreadCount;
+        previousSettings.modelInputSize != nextSettings.modelInputSize ||
+        previousSettings.tfliteThreadCount != nextSettings.tfliteThreadCount;
     final cameraProfileChanged =
         previousSettings.cameraCaptureProfile !=
-            nextSettings.cameraCaptureProfile;
+        nextSettings.cameraCaptureProfile;
     final requiresRestart = detectorConfigChanged || cameraProfileChanged;
     final resumeProcessing = requiresRestart && _isProcessing;
 
@@ -389,18 +475,37 @@ class VisionPipelineController extends ChangeNotifier {
 
       if (detectorConfigChanged) {
         await _detector.applySettings(nextSettings);
+        final testResult = await _detector.runTestInference(
+          frame: _lastFrameContext,
+        );
+        _lastDetectorTestResult = testResult;
+        if (!testResult.success) {
+          throw StateError('Detector self-test failed: ${testResult.message}');
+        }
       }
+      await _perceptionOrchestrator.applySettings(nextSettings);
 
       _inferenceDiagnostics = _detector.diagnostics;
       _publishDiagnostics();
       _pipelineStatus = _sourceState.isReady ? 'Ready' : _pipelineStatus;
       notifyListeners();
     } catch (error) {
+      _settings = previousSettings;
       _errorMessage = error.toString();
+      try {
+        await _detector.applySettings(previousSettings);
+        await _perceptionOrchestrator.applySettings(previousSettings);
+        _inferenceDiagnostics = _detector.diagnostics;
+        _publishDiagnostics();
+      } catch (rollbackError) {
+        _errorMessage =
+            'Runtime settings update failed: $error; rollback failed: $rollbackError';
+      }
       _appendEvent(
         PipelineEvent(
           type: PipelineEventType.pipelineState,
-          message: 'Runtime settings update failed: $_errorMessage',
+          message:
+              'Runtime settings update failed and previous settings were restored: $_errorMessage',
           timestamp: DateTime.now(),
         ),
       );
@@ -421,6 +526,7 @@ class VisionPipelineController extends ChangeNotifier {
   void dispose() {
     unawaited(_mediaSourceService.dispose());
     unawaited(_detector.dispose());
+    unawaited(_perceptionOrchestrator.dispose());
     unawaited(_semanticLabeler.dispose());
     unawaited(_learningCore.dispose());
     unawaited(_persistenceProcessor.dispose());
@@ -431,6 +537,7 @@ class VisionPipelineController extends ChangeNotifier {
     _sourceStateNotifier.dispose();
     _sourceSizeNotifier.dispose();
     _processingNotifier.dispose();
+    _perceptionResultNotifier.dispose();
     super.dispose();
   }
 
@@ -445,9 +552,11 @@ class VisionPipelineController extends ChangeNotifier {
       frame: frame,
       settings: _settings,
     );
-    _trackedEntities = _trackedEntities.map((item) {
-      return item.trackId == entity.trackId ? updatedEntity : item;
-    }).toList(growable: false);
+    _trackedEntities = _trackedEntities
+        .map((item) {
+          return item.trackId == entity.trackId ? updatedEntity : item;
+        })
+        .toList(growable: false);
     _publishTrackedEntities();
     await _persistenceProcessor.registerCorrection(updatedEntity);
     _learningSnapshot = _learningCore.snapshot;
@@ -487,7 +596,9 @@ class VisionPipelineController extends ChangeNotifier {
   }
 
   Future<String?> exportLearningDataset() async {
-    final exportPath = await _learningCore.exportTrainingDataset();
+    final exportPath = await _learningCore.exportTrainingDataset(
+      perceptionResult: _lastPerceptionResult,
+    );
     _learningSnapshot = _learningCore.snapshot;
     if (exportPath != null) {
       _appendEvent(
@@ -504,8 +615,9 @@ class VisionPipelineController extends ChangeNotifier {
 
   Future<void> clearLearnedMemory() async {
     await _learningCore.clearAllLearning();
-    _trackedEntities =
-        _trackedEntities.map((entity) => entity.resetLearningState()).toList();
+    _trackedEntities = _trackedEntities
+        .map((entity) => entity.resetLearningState())
+        .toList();
     _publishTrackedEntities();
     _learningSnapshot = _learningCore.snapshot;
     _appendEvent(
@@ -551,7 +663,9 @@ class VisionPipelineController extends ChangeNotifier {
         timestamp: DateTime.now(),
         details: <String, Object?>{
           'inputShape': result.inputShape.join('x'),
-          'outputs': result.outputShapes.map((shape) => shape.join('x')).join(', '),
+          'outputs': result.outputShapes
+              .map((shape) => shape.join('x'))
+              .join(', '),
         },
       ),
     );
@@ -566,7 +680,8 @@ class VisionPipelineController extends ChangeNotifier {
 
     if (_lastAcceptedFrameAt != null &&
         _adaptiveFrameInterval > Duration.zero &&
-        frame.timestamp.difference(_lastAcceptedFrameAt!) < _adaptiveFrameInterval) {
+        frame.timestamp.difference(_lastAcceptedFrameAt!) <
+            _adaptiveFrameInterval) {
       _skippedFrames += 1;
       _updatePipelineMetrics();
       return;
@@ -610,52 +725,38 @@ class VisionPipelineController extends ChangeNotifier {
       _sourceState = _mediaSourceService.sourceState;
       _publishSourceState();
 
-      List<DetectionResult> detections = const <DetectionResult>[];
-      if (_settings.detectionEnabled) {
-        detections = await _detector.detect(frame);
-        _inferenceDiagnostics = _detector.diagnostics;
-        _publishDiagnostics();
-        final effectiveThreshold = kDebugMode
-            ? math.min(_settings.confidenceThreshold, 0.05)
-            : _settings.confidenceThreshold;
-        detections = detections
-            .where((detection) => detection.confidence >= effectiveThreshold)
-            .toList(growable: false);
-      }
-
       final trackingWatch = Stopwatch()..start();
-      List<TrackedEntity> entities;
-      if (_settings.trackingEnabled) {
-        entities = _tracker.update(detections, frame);
-      } else {
-        entities = detections.map((detection) {
-          return TrackedEntity(
-            trackId: detection.id,
-            stableLabel: detection.classLabel,
-            classLabel: detection.classLabel,
-            boundingBox: detection.boundingBox,
-            confidence: detection.confidence,
-            detectorConfidence: detection.confidence,
-            firstSeenAt: detection.timestamp,
-            lastSeenAt: detection.timestamp,
-          );
-        }).toList(growable: false);
-      }
+      final perceptionResult = await _perceptionOrchestrator.processFrame(
+        frame: frame,
+        settings: _settings,
+      );
+      var detections = perceptionResult.detections;
+      var entities = perceptionResult.tracks;
+      _lastPerceptionResult = perceptionResult;
+      _publishPerceptionResult();
+      _inferenceDiagnostics = _detector.diagnostics;
+      _publishDiagnostics();
 
       if (_settings.trackingEnabled && _settings.reidentificationEnabled) {
         final resolution = _identityRegistry.reconcile(
           entities,
           frame,
           persistence: _settings.identityPersistence,
+          confidenceThreshold: _settings.reIdConfidenceThreshold,
         );
         entities = resolution.tracks;
         for (final event in resolution.events) {
           _appendEvent(event);
         }
       } else if (_settings.trackingEnabled) {
-        entities = entities.map((entity) {
-          return entity.copyWith(stableLabel: entity.trackId);
-        }).toList(growable: false);
+        entities = entities
+            .map((entity) {
+              return entity.copyWith(
+                stableLabel: entity.trackId,
+                clearPersistentEntityId: true,
+              );
+            })
+            .toList(growable: false);
       }
 
       if (_settings.semanticLabelerEnabled) {
@@ -693,6 +794,15 @@ class VisionPipelineController extends ChangeNotifier {
 
       _trackedEntities = entities;
       _publishTrackedEntities();
+      _lastPerceptionResult = _lastPerceptionResult?.copyWith(
+        tracks: entities,
+        overlayItems: _overlayItemsForEntities(
+          entities,
+          _lastPerceptionResult?.segmentations ?? const <SegmentationResult>[],
+          _lastPerceptionResult?.identities ?? const <IdentityFusionResult>[],
+        ),
+      );
+      _publishPerceptionResult();
       _recentDetections = <DetectionResult>[
         ...detections.reversed,
         ..._recentDetections,
@@ -721,8 +831,9 @@ class VisionPipelineController extends ChangeNotifier {
         loggingMs: loggingWatch.elapsedMicroseconds / 1000,
         totalPipelineMs: totalWatch.elapsedMicroseconds / 1000,
         pipelinePath:
-            '${_sourceState.type.label.toLowerCase()} -> preprocessor -> LiteRT'
-            ' -> parser -> tracker -> persistence -> learning',
+            '${_sourceState.type.label.toLowerCase()} -> frame scheduler'
+            ' -> perception orchestrator -> detector/segmentation/tracker'
+            ' -> identity fusion -> persistence -> learning',
       );
       _publishStageTimings();
       _refreshMetrics(totalWatch.elapsed);
@@ -747,9 +858,11 @@ class VisionPipelineController extends ChangeNotifier {
     List<DetectionResult> detections,
     DateTime timestamp,
   ) {
-    final shouldLog = _lastDetectionCount != detections.length ||
+    final shouldLog =
+        _lastDetectionCount != detections.length ||
         _lastDetectionEventAt == null ||
-        timestamp.difference(_lastDetectionEventAt!) > const Duration(seconds: 2);
+        timestamp.difference(_lastDetectionEventAt!) >
+            const Duration(seconds: 2);
 
     if (!shouldLog) {
       return;
@@ -767,9 +880,25 @@ class VisionPipelineController extends ChangeNotifier {
         details: <String, Object?>{
           'count': detections.length,
           'source': _sourceState.type.label,
+          'rawClassIds': _inferenceDiagnostics.rawClassIds.join(', '),
+          'mappedLabels': _inferenceDiagnostics.mappedLabels.join(', '),
+          'unknownLabelCount': _inferenceDiagnostics.unknownLabelCount,
+          'labelMapLoaded': _inferenceDiagnostics.labelMapLoaded,
+          'labelMapName': _inferenceDiagnostics.labelMapName,
         },
       ),
     );
+
+    if (_inferenceDiagnostics.unknownLabelCount > 0) {
+      _appendEvent(
+        PipelineEvent(
+          type: PipelineEventType.pipelineState,
+          message:
+              'Missing label map entries for class id(s): ${_inferenceDiagnostics.missingClassIds.join(', ')}.',
+          timestamp: timestamp,
+        ),
+      );
+    }
   }
 
   void _refreshMetrics(Duration latency) {
@@ -860,8 +989,49 @@ class VisionPipelineController extends ChangeNotifier {
   }
 
   void _publishTrackedEntities() {
-    _trackedEntitiesNotifier.value =
-        List<TrackedEntity>.from(_trackedEntities, growable: false);
+    _trackedEntitiesNotifier.value = List<TrackedEntity>.from(
+      _trackedEntities,
+      growable: false,
+    );
+  }
+
+  void _publishPerceptionResult() {
+    _perceptionResultNotifier.value = _lastPerceptionResult;
+  }
+
+  List<PerceptionOverlayItem> _overlayItemsForEntities(
+    List<TrackedEntity> entities,
+    List<SegmentationResult> segmentations,
+    List<IdentityFusionResult> identities,
+  ) {
+    return entities
+        .map((entity) {
+          final identity = identities.where(
+            (item) => item.trackId == entity.trackId,
+          );
+          final mask = segmentations.where((segmentation) {
+            return segmentation.associatedTrackId == entity.trackId ||
+                segmentation.boundingBox.intersectionOverUnion(
+                      entity.boundingBox,
+                    ) >
+                    0.4;
+          });
+          final identityItem = identity.isEmpty ? null : identity.first;
+          return PerceptionOverlayItem(
+            id: entity.trackId,
+            label: entity.overlayLabel,
+            classLabel: entity.effectiveClassLabel,
+            trackLabel: entity.trackLabel,
+            persistentEntityId:
+                entity.persistentEntityId ?? identityItem?.persistentEntityId,
+            boundingBox: entity.boundingBox,
+            confidence: entity.displayConfidence,
+            mask: mask.isEmpty ? null : mask.first,
+            reasonBreakdown:
+                identityItem?.reasonBreakdown ?? const <String, double>{},
+          );
+        })
+        .toList(growable: false);
   }
 
   void _publishMetrics() {
@@ -896,4 +1066,11 @@ class VisionPipelineController extends ChangeNotifier {
       sourceType: _sourceState.type,
     );
   }
+}
+
+class _SettingsValidation {
+  const _SettingsValidation({required this.settings, required this.messages});
+
+  final AppSettings settings;
+  final List<String> messages;
 }

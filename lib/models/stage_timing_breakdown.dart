@@ -57,14 +57,11 @@ class StageTimingBreakdown {
     String? pipelinePath,
   }) {
     return StageTimingBreakdown(
-      sourceAcquisitionMs:
-          sourceAcquisitionMs ?? this.sourceAcquisitionMs,
-      colorConversionMs:
-          colorConversionMs ?? this.colorConversionMs,
+      sourceAcquisitionMs: sourceAcquisitionMs ?? this.sourceAcquisitionMs,
+      colorConversionMs: colorConversionMs ?? this.colorConversionMs,
       rotationMs: rotationMs ?? this.rotationMs,
       resizeMs: resizeMs ?? this.resizeMs,
-      normalizationMs:
-          normalizationMs ?? this.normalizationMs,
+      normalizationMs: normalizationMs ?? this.normalizationMs,
       tensorCopyMs: tensorCopyMs ?? this.tensorCopyMs,
       inferenceMs: inferenceMs ?? this.inferenceMs,
       outputParsingMs: outputParsingMs ?? this.outputParsingMs,
@@ -72,13 +69,10 @@ class StageTimingBreakdown {
       persistenceMs: persistenceMs ?? this.persistenceMs,
       learningMs: learningMs ?? this.learningMs,
       loggingMs: loggingMs ?? this.loggingMs,
-      overlayRepaintMs:
-          overlayRepaintMs ?? this.overlayRepaintMs,
+      overlayRepaintMs: overlayRepaintMs ?? this.overlayRepaintMs,
       totalPipelineMs: totalPipelineMs ?? this.totalPipelineMs,
-      overlayRepaintCount:
-          overlayRepaintCount ?? this.overlayRepaintCount,
-      liveWidgetBuildCount:
-          liveWidgetBuildCount ?? this.liveWidgetBuildCount,
+      overlayRepaintCount: overlayRepaintCount ?? this.overlayRepaintCount,
+      liveWidgetBuildCount: liveWidgetBuildCount ?? this.liveWidgetBuildCount,
       pipelinePath: pipelinePath ?? this.pipelinePath,
     );
   }

@@ -39,7 +39,7 @@ class TrackedEntityCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  entity.stableLabel,
+                  entity.overlayLabel,
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
@@ -47,7 +47,10 @@ class TrackedEntityCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(999),
@@ -74,9 +77,7 @@ class TrackedEntityCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             entity.detailLabel,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.white70,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -90,30 +91,41 @@ class TrackedEntityCard extends StatelessWidget {
               ),
               _FactPill(
                 label: 'Adaptive',
-                value: '${(entity.displayConfidence * 100).toStringAsFixed(0)}%',
+                value:
+                    '${(entity.displayConfidence * 100).toStringAsFixed(0)}%',
               ),
-              _FactPill(label: 'Corrections', value: '${entity.correctionCount}'),
+              _FactPill(
+                label: 'Corrections',
+                value: '${entity.correctionCount}',
+              ),
               _FactPill(label: 'Missed', value: '${entity.missedFrames}'),
-              _FactPill(label: 'Updated', value: _formatTime(entity.lastSeenAt)),
+              _FactPill(
+                label: 'Updated',
+                value: _formatTime(entity.lastSeenAt),
+              ),
               if (entity.identityConfidence != null)
                 _FactPill(
                   label: 'Identity AI',
-                  value: '${(entity.identityConfidence! * 100).toStringAsFixed(0)}%',
+                  value:
+                      '${(entity.identityConfidence! * 100).toStringAsFixed(0)}%',
                 ),
               if (entity.faceConfidence != null)
                 _FactPill(
                   label: 'Face',
-                  value: '${(entity.faceConfidence! * 100).toStringAsFixed(0)}%',
+                  value:
+                      '${(entity.faceConfidence! * 100).toStringAsFixed(0)}%',
                 ),
               if (entity.embeddingSimilarity != null)
                 _FactPill(
                   label: 'Embed',
-                  value: '${(entity.embeddingSimilarity! * 100).toStringAsFixed(0)}%',
+                  value:
+                      '${(entity.embeddingSimilarity! * 100).toStringAsFixed(0)}%',
                 ),
               if (entity.temporalConfidence != null)
                 _FactPill(
                   label: 'Temporal',
-                  value: '${(entity.temporalConfidence! * 100).toStringAsFixed(0)}%',
+                  value:
+                      '${(entity.temporalConfidence! * 100).toStringAsFixed(0)}%',
                 ),
               if (entity.recoveredInFrame)
                 const _FactPill(label: 'Identity', value: 'Recovered'),
@@ -154,10 +166,7 @@ class TrackedEntityCard extends StatelessWidget {
 }
 
 class _FactPill extends StatelessWidget {
-  const _FactPill({
-    required this.label,
-    required this.value,
-  });
+  const _FactPill({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -173,9 +182,9 @@ class _FactPill extends StatelessWidget {
       child: Text(
         '$label: $value',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white70,
-              fontWeight: FontWeight.w700,
-            ),
+          color: Colors.white70,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

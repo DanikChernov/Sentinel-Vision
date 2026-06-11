@@ -23,8 +23,8 @@ class FeedbackTrainer {
   FeedbackTrainer({
     required AdaptiveLabelRefiner labelRefiner,
     required IdentityPatternMemory identityPatternMemory,
-  })  : _labelRefiner = labelRefiner,
-        _identityPatternMemory = identityPatternMemory;
+  }) : _labelRefiner = labelRefiner,
+       _identityPatternMemory = identityPatternMemory;
 
   final AdaptiveLabelRefiner _labelRefiner;
   final IdentityPatternMemory _identityPatternMemory;
@@ -69,8 +69,9 @@ class FeedbackTrainer {
       );
       final existing = _labelRefiner.mappingFor(entity, frame);
       final usageCount = (existing?.usageCount ?? 0) + 1;
-      final learningConfidence =
-          math.min(0.99, 0.48 + (usageCount * 0.08)).toDouble();
+      final learningConfidence = math
+          .min(0.99, 0.48 + (usageCount * 0.08))
+          .toDouble();
       mappingSummary = CorrectedLabelSummary(
         key: key,
         originalLabel: entity.classLabel,
@@ -80,8 +81,8 @@ class FeedbackTrainer {
         averageLearningConfidence: existing == null
             ? learningConfidence
             : ((existing.averageLearningConfidence * (usageCount - 1)) +
-                    learningConfidence) /
-                usageCount,
+                      learningConfidence) /
+                  usageCount,
         lastUpdatedAt: frame.timestamp,
       );
       _labelRefiner.upsert(mappingSummary);
